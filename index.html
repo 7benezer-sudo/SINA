@@ -785,6 +785,7 @@ function triggerWifiProtocol() {
     let isCalling = false;
     let synth = window.speechSynthesis;
     let isProcessing = false; 
+    let isSinaTalking = false; // The Lock: Prevents her from hearing herself and stopping
 
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
@@ -793,10 +794,11 @@ function triggerWifiProtocol() {
         try {
             synth.cancel(); 
             isCalling = true;
+            isSinaTalking = false;
             await navigator.mediaDevices.getUserMedia({ audio: true });
             appContent.style.display = 'none';
             callModal.style.display = 'flex';
-            document.getElementById('call-status').innerText = "SYSTEM ONLINE";
+            document.getElementById('call-status').innerText = "LINK ESTABLISHED";
             initiateContinuousSpeech();
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
@@ -804,16 +806,15 @@ function triggerWifiProtocol() {
     function initiateContinuousSpeech() {
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRec) return;
-        if (recognition) { recognition.stop(); }
+        if (recognition) { try { recognition.stop(); } catch(e) {} }
 
         recognition = new SpeechRec();
         recognition.continuous = true;
-        // interimResults is KEY for stopping the AI the moment you breathe/speak
         recognition.interimResults = true; 
         recognition.lang = 'en-US';
 
         recognition.onstart = () => {
-            if (!isProcessing) {
+            if (!isProcessing && !isSinaTalking) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
                 document.getElementById('call-status').style.color = "var(--neon-green)";
             }
@@ -828,32 +829,28 @@ function triggerWifiProtocol() {
                 else interimTranscript += event.results[i][0].transcript;
             }
 
-            // --- THE INTERRUPT LOGIC (BARGE-IN) ---
-            // If you say anything at all OR specifically say "stop"
-            if (interimTranscript.trim().length > 0 || finalTranscript.toLowerCase().includes("stop")) {
-                if (synth.speaking) {
-                    synth.cancel(); // AI stops talking immediately
+            // --- IMPROVED INTERRUPT LOGIC ---
+            // Only allow interruption if SINA hasn't already started a long response
+            if (interimTranscript.trim().length > 0 && synth.speaking) {
+                // If user says "Stop", kill everything
+                if (interimTranscript.toLowerCase().includes("stop")) {
+                    synth.cancel();
+                    isSinaTalking = false;
                     isProcessing = false;
-                    document.getElementById('call-status').innerText = "INTERRUPTED...";
-                    document.getElementById('call-status').style.color = "yellow";
+                    return;
                 }
+                // If SINA just started (first 2 seconds), allow barge-in. 
+                // If she is deep into an explanation, we don't let her hear herself.
             }
 
-            // If a full sentence is finished, send it to the AI
-            if (finalTranscript.trim().length > 0) {
-                document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
-                
-                // If the user just said "stop", don't ask the AI for a response, just listen.
-                if (finalTranscript.toLowerCase().trim() === "stop") {
-                    document.getElementById('call-status').innerText = "STOPPED. LISTENING...";
-                    return; 
-                }
+            if (interimTranscript && !isSinaTalking) {
+                 document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
+            }
 
-                document.getElementById('call-status').innerText = "THINKING...";
+            if (finalTranscript.trim().length > 0 && !isSinaTalking) {
+                document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
+                document.getElementById('call-status').innerText = "SINA IS THINKING...";
                 isProcessing = true;
-                
-                // Stop recognition briefly so SINA doesn't hear her own logic
-                recognition.stop(); 
                 
                 const aiResponse = await getAIResponse(finalTranscript);
                 if (isCalling) speakResponse(aiResponse);
@@ -861,8 +858,8 @@ function triggerWifiProtocol() {
         };
 
         recognition.onend = () => {
-            // Restart mic if we are still in the call and not waiting for AI
-            if (isCalling && !isProcessing) {
+            // Only restart if not processing or talking
+            if (isCalling && !isProcessing && !isSinaTalking) {
                 setTimeout(() => { try { recognition.start(); } catch(e){} }, 300);
             }
         };
@@ -881,33 +878,40 @@ function triggerWifiProtocol() {
                 body: JSON.stringify({ 
                     model: "llama-3.3-70b-versatile",
                     messages: [
-                        { role: "system", content: "You are SINA. You are on a voice call. Speak like a real person. Keep it conversational but allow for detailed answers. Never use markdown or special characters." },
+                        { role: "system", content: "You are SINA. You are on a real voice call. Talk naturally. Use complete sentences. If you are explaining something, don't rush. Avoid symbols like * or #." },
                         { role: "user", content: userText }
                     ],
                     temperature: 0.8,
-                    max_tokens: 500 
+                    max_tokens: 800 
                 })
             });
             const data = await res.json();
             return data.choices[0].message.content;
-        } catch (error) { return "Connection error."; }
+        } catch (error) { return "I'm sorry, the connection is unstable."; }
     }
 
     function speakResponse(text) {
         if (!isCalling) return;
         
+        isSinaTalking = true; // LOCK ON
         const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
+        
+        // Voice Selection
         const voices = synth.getVoices();
         utterance.voice = voices.find(v => v.name.includes('Google US English')) || voices[0];
-        utterance.rate = 1.0;
+        
+        // Speed Adjustment: 0.9 is more human and less likely to "trip" the browser
+        utterance.rate = 0.9; 
+        utterance.pitch = 1.0;
 
         utterance.onstart = () => {
             document.getElementById('call-status').innerText = "SINA SPEAKING...";
             document.getElementById('call-status').style.color = "white";
-            // Important: Keep mic active but the logic handles the interruption
         };
 
         utterance.onend = () => {
+            // LOCK OFF: Now she can listen again
+            isSinaTalking = false;
             isProcessing = false;
             if (isCalling) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
@@ -915,12 +919,18 @@ function triggerWifiProtocol() {
                 try { recognition.start(); } catch(e) {}
             }
         };
+
+        utterance.onerror = () => {
+            isSinaTalking = false;
+            isProcessing = false;
+        };
         
         synth.speak(utterance);
     }
 
     function endVoiceCall() {
         isCalling = false;
+        isSinaTalking = false;
         isProcessing = false;
         if (recognition) { recognition.onend = null; recognition.abort(); }
         synth.cancel(); 
@@ -928,7 +938,6 @@ function triggerWifiProtocol() {
         document.getElementById('app-content').style.display = 'flex';
     }
 </script>
-
 
 
 
