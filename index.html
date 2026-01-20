@@ -1009,7 +1009,13 @@ function endVoiceCall() {
 
 function handleWebCommands(transcript) {
     const text = transcript.toLowerCase().trim();
-    
+
+
+	if (text.includes("sing a song")) {
+        sinaSingSong();
+        return true; 
+    }
+	
     if (text.startsWith("open ")) {
         let siteName = text.replace("open ", "").trim();
         siteName = siteName.replace(/[.?]/g, ""); // Clean punctuation
@@ -1037,6 +1043,41 @@ function handleWebCommands(transcript) {
         return true; 
     }
     return false; 
+}
+
+	// NEW: The Singing Function
+function sinaSingSong() {
+    const songLines = [
+        { text: "Daisy, Daisy,", pitch: 1.3, rate: 0.8 },
+        { text: "Give me your answer, do.", pitch: 1.1, rate: 0.8 },
+        { text: "I'm half crazy,", pitch: 0.9, rate: 0.8 },
+        { text: "all for the love of you.", pitch: 1.0, rate: 0.7 }
+    ];
+
+    let lineIndex = 0;
+    synth.cancel(); // Stop any current talking
+
+    function nextLine() {
+        if (lineIndex < songLines.length && isCalling) {
+            const line = songLines[lineIndex];
+            const utterance = new SpeechSynthesisUtterance(line.text);
+            utterance.pitch = line.pitch;
+            utterance.rate = line.rate;
+            
+            const voices = synth.getVoices();
+            utterance.voice = voices.find(v => v.name.includes("Google US English")) || voices[0];
+
+            utterance.onend = () => {
+                lineIndex++;
+                setTimeout(nextLine, 300); 
+            };
+            synth.speak(utterance);
+        } else {
+            isProcessing = false;
+            if (typeof startListening === "function") startListening();
+        }
+    }
+    nextLine();
 }
 	
 </script>
