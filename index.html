@@ -692,13 +692,15 @@ function toggleVault() {
         mainApp.style.display = 'none';
         archivePage.style.display = 'flex';
         
-        // Start checking for "Beams"
-        if (typeof startPassiveReceivingMode === "function") startPassiveReceivingMode();
+        // 1. ACTIVATE PASSIVE RECEIVING (The "S" sign listener)
+        if (typeof startPassiveReceivingMode === "function") {
+            startPassiveReceivingMode();
+        }
 
         const data = getVaultData();
         
-        // Clear container and keep it empty if no data
-        container.innerHTML = "";
+        // 2. CLEAR AND REBUILD
+        container.innerHTML = ""; 
         
         if (data.length === 0) {
             container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; margin-top: 100px;">Neural Archive is empty. Upload files via terminal.</p>';
@@ -710,10 +712,10 @@ function toggleVault() {
             const displayName = isFile ? item.content.name : "Text Record";
             const displayBody = isFile ? `TYPE: ${item.content.type}` : item.content;
 
-            // Using your requested shiny background and double-click beam logic
+            // 3. ADD SHINY CARDS WITH DOUBLE-CLICK BEAM TRIGGER
             container.innerHTML += `
-                <div ondblclick='if(typeof initiateVisualBeam === "function") initiateVisualBeam(${JSON.stringify(item.content)})' 
-                     style="background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(57, 255, 20, 0.1); padding: 20px; border-radius: 16px; cursor: pointer; transition: 0.3s;"
+                <div ondblclick='initiateVisualBeam(${JSON.stringify(item.content)})' 
+                     style="background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(57, 255, 20, 0.1); padding: 20px; border-radius: 16px; cursor: pointer; transition: 0.3s; position: relative; z-index: 10;"
                      onmouseover="this.style.borderColor='var(--neon-green)';" 
                      onmouseout="this.style.borderColor='rgba(57, 255, 20, 0.1)';"
                 >
@@ -737,6 +739,7 @@ function toggleVault() {
     } else {
         archivePage.style.display = 'none';
         mainApp.style.display = 'flex';
+        // 4. STOP LISTENING WHEN CLOSED
         if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
     }
 }
@@ -838,6 +841,124 @@ function triggerWifiProtocol() {
             appendMsg("Hardware blocked direct access. Virtual Neural Tunnel activated.", "ai");
         }, 2000);
     }
+}
+
+	async function sendPrompt() {
+    const input = document.getElementById('userInput');
+    const text = input.value.trim();
+    
+    // 1. Check if we have input or a file
+    if (!text && !selectedFileBase64) return;
+    
+    const fileName = document.getElementById('fileInput').files[0]?.name || "Document";
+    
+    // 2. UI Update
+    appendMsg(text || `Uploading ${fileName}...`, 'user');
+    input.value = "";
+    
+    const aiId = 'ai-' + Date.now();
+    appendMsg('Neural Processing...', 'ai', aiId);
+
+    try {
+        // --- VAULT UPLOAD LOGIC ---
+        if (selectedFileBase64) {
+            saveToVault({
+                name: fileName,
+                type: selectedFileType,
+                data: selectedFileBase64,
+                is_file: true
+            });
+            
+            updateMsg(aiId, `The ${fileName} has been successfully uploaded to your Neural Archive.`);
+            clearFile();
+            return; 
+        }
+
+        // --- AI API LOGIC ---
+        // Ensure apiKey is defined at the top of your script!
+        const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}` // Ensure this variable exists
+            },
+            body: JSON.stringify({ 
+                model: "llama-3.3-70b-versatile",
+                messages: [{ role: "user", content: text }],
+                temperature: 0.7
+            })
+        });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+
+        if (data.choices && data.choices[0]) {
+            updateMsg(aiId, data.choices[0].message.content);
+        }
+    } catch (e) {
+        updateMsg(aiId, "Neural Link Failure: " + e.message);
+    }
+}
+
+
+	// --- SENDER: Double Click Logic ---
+async function initiateVisualBeam(fileContent) {
+    // 1. Create the UI if it doesn't exist
+    if(!document.getElementById('visual-bridge')) {
+        createBridgeUI();
+    }
+    
+    document.getElementById('vault-modal').style.display = 'none';
+    document.getElementById('visual-bridge').style.display = 'flex';
+    
+    try {
+        // GitHub Pages requires HTTPS for this to work!
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment" } 
+        });
+        const video = document.getElementById('bridge-video');
+        video.srcObject = stream;
+        video.play();
+        
+        // Target simulation
+        setTimeout(() => {
+            const targetID = prompt("VISUAL LOCK CONFIRMED. Enter Target Neural ID:");
+            if(targetID) {
+                localStorage.setItem('neural_handshake', JSON.stringify({
+                    target: targetID.toLowerCase(),
+                    file: fileContent
+                }));
+                alert("FILE BEAMED SUCCESSFULLY.");
+            }
+            closeBridge();
+        }, 3000);
+    } catch (err) {
+        alert("Camera Access Denied: " + err.message);
+        closeBridge();
+    }
+}
+
+function closeBridge() {
+    const bridge = document.getElementById('visual-bridge');
+    if(bridge) bridge.style.display = 'none';
+    const video = document.getElementById('bridge-video');
+    if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+    }
+}
+
+function createBridgeUI() {
+    const bridgeDiv = document.createElement('div');
+    bridgeDiv.id = 'visual-bridge';
+    bridgeDiv.style = "display:none; position:fixed; inset:0; background:#000; z-index:20000; flex-direction:column;";
+    bridgeDiv.innerHTML = `
+        <video id="bridge-video" style="width:100%; height:70vh; object-fit:cover;"></video>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#39ff14; font-family:'JetBrains Mono';">
+            <p id="bridge-status">SCANNING FOR BEACON...</p>
+            <button onclick="closeBridge()" class="auth-btn" style="width:200px; background:#333; color:white;">CANCEL</button>
+        </div>
+    `;
+    document.body.appendChild(bridgeDiv);
 }
 </script>
 
