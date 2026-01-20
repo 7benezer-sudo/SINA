@@ -778,13 +778,13 @@ function triggerWifiProtocol() {
 
 
 <script>
+    // --- CONFIGURATION ---
     const voiceApiKey = "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"; 
     
     let recognition;
     let isCalling = false;
     let synth = window.speechSynthesis;
     let isProcessing = false; 
-    let isSinaSpeaking = false; // The "Muzzle" variable
 
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
@@ -793,11 +793,10 @@ function triggerWifiProtocol() {
         try {
             synth.cancel(); 
             isCalling = true;
-            isSinaSpeaking = false;
             await navigator.mediaDevices.getUserMedia({ audio: true });
             appContent.style.display = 'none';
             callModal.style.display = 'flex';
-            document.getElementById('call-status').innerText = "LINK ESTABLISHED";
+            document.getElementById('call-status').innerText = "SYSTEM ONLINE";
             initiateContinuousSpeech();
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
@@ -805,54 +804,66 @@ function triggerWifiProtocol() {
     function initiateContinuousSpeech() {
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRec) return;
-        if (recognition) { recognition.stop(); recognition = null; }
+        if (recognition) { recognition.stop(); }
 
         recognition = new SpeechRec();
         recognition.continuous = true;
-        recognition.interimResults = true;
+        // interimResults is KEY for stopping the AI the moment you breathe/speak
+        recognition.interimResults = true; 
         recognition.lang = 'en-US';
 
         recognition.onstart = () => {
-            if (!isProcessing && !isSinaSpeaking) {
+            if (!isProcessing) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
                 document.getElementById('call-status').style.color = "var(--neon-green)";
             }
         };
 
         recognition.onresult = async (event) => {
-            // IF SINA IS SPEAKING, IGNORE ALL MIC INPUT (Prevents cutting herself off)
-            if (isSinaSpeaking) return; 
-
-            let finalTranscript = '';
             let interimTranscript = '';
+            let finalTranscript = '';
+
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
                 else interimTranscript += event.results[i][0].transcript;
             }
 
-            // BARGE-IN: Only works if SINA isn't already speaking (to be safe)
-            if (interimTranscript.length > 0 && synth.speaking && !isSinaSpeaking) {
-                synth.cancel();
+            // --- THE INTERRUPT LOGIC (BARGE-IN) ---
+            // If you say anything at all OR specifically say "stop"
+            if (interimTranscript.trim().length > 0 || finalTranscript.toLowerCase().includes("stop")) {
+                if (synth.speaking) {
+                    synth.cancel(); // AI stops talking immediately
+                    isProcessing = false;
+                    document.getElementById('call-status').innerText = "INTERRUPTED...";
+                    document.getElementById('call-status').style.color = "yellow";
+                }
             }
 
-            if (interimTranscript) {
-                 document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
-            }
-
+            // If a full sentence is finished, send it to the AI
             if (finalTranscript.trim().length > 0) {
                 document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
-                document.getElementById('call-status').innerText = "SINA IS THINKING...";
+                
+                // If the user just said "stop", don't ask the AI for a response, just listen.
+                if (finalTranscript.toLowerCase().trim() === "stop") {
+                    document.getElementById('call-status').innerText = "STOPPED. LISTENING...";
+                    return; 
+                }
+
+                document.getElementById('call-status').innerText = "THINKING...";
                 isProcessing = true;
+                
+                // Stop recognition briefly so SINA doesn't hear her own logic
                 recognition.stop(); 
+                
                 const aiResponse = await getAIResponse(finalTranscript);
                 if (isCalling) speakResponse(aiResponse);
             }
         };
 
         recognition.onend = () => {
-            // Restart mic ONLY if call is active and we aren't waiting for AI or SINA speaking
-            if (isCalling && !isSinaSpeaking && !isProcessing) {
-                setTimeout(() => { try { recognition.start(); } catch(e){} }, 400);
+            // Restart mic if we are still in the call and not waiting for AI
+            if (isCalling && !isProcessing) {
+                setTimeout(() => { try { recognition.start(); } catch(e){} }, 300);
             }
         };
 
@@ -870,43 +881,33 @@ function triggerWifiProtocol() {
                 body: JSON.stringify({ 
                     model: "llama-3.3-70b-versatile",
                     messages: [
-                        { 
-                            role: "system", 
-                            content: "You are SINA. You are on a phone call. Talk like a real human. Use natural sentences and emotions. No lists, no markdown. Speak at length if the topic is interesting." 
-                        },
+                        { role: "system", content: "You are SINA. You are on a voice call. Speak like a real person. Keep it conversational but allow for detailed answers. Never use markdown or special characters." },
                         { role: "user", content: userText }
                     ],
                     temperature: 0.8,
-                    max_tokens: 800 
+                    max_tokens: 500 
                 })
             });
             const data = await res.json();
             return data.choices[0].message.content;
-        } catch (error) { return "I'm sorry, my neural link is flickering."; }
+        } catch (error) { return "Connection error."; }
     }
 
     function speakResponse(text) {
         if (!isCalling) return;
-        isSinaSpeaking = true; // LOCK MIC
         
-        const cleanText = text.replace(/[*#_]/g, ''); 
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-        
+        const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
         const voices = synth.getVoices();
-        const preferredVoice = voices.find(v => v.name.includes('Google US English')) || 
-                               voices.find(v => v.lang.includes('en-US'));
-        if (preferredVoice) utterance.voice = preferredVoice;
-        
-        utterance.rate = 0.95; // Slightly slower makes it more human and less prone to glitches
-        utterance.pitch = 1.0;
+        utterance.voice = voices.find(v => v.name.includes('Google US English')) || voices[0];
+        utterance.rate = 1.0;
 
         utterance.onstart = () => {
             document.getElementById('call-status').innerText = "SINA SPEAKING...";
-            document.getElementById('call-status').style.color = "#ffffff";
+            document.getElementById('call-status').style.color = "white";
+            // Important: Keep mic active but the logic handles the interruption
         };
 
         utterance.onend = () => {
-            isSinaSpeaking = false; // UNLOCK MIC
             isProcessing = false;
             if (isCalling) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
@@ -920,7 +921,6 @@ function triggerWifiProtocol() {
 
     function endVoiceCall() {
         isCalling = false;
-        isSinaSpeaking = false;
         isProcessing = false;
         if (recognition) { recognition.onend = null; recognition.abort(); }
         synth.cancel(); 
@@ -928,7 +928,6 @@ function triggerWifiProtocol() {
         document.getElementById('app-content').style.display = 'flex';
     }
 </script>
-
 
 
 
