@@ -772,11 +772,6 @@ function triggerWifiProtocol() {
 
 
 
-
-
-
-
-
 <script>
     // --- CONFIGURATION ---
     const voiceApiKey = "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"; 
@@ -785,7 +780,7 @@ function triggerWifiProtocol() {
     let isCalling = false;
     let synth = window.speechSynthesis;
     let isProcessing = false; 
-    let isSinaTalking = false; // The Lock: Prevents her from hearing herself and stopping
+    let safetyLock = false; // NEW: Prevents SINA from hearing herself
 
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
@@ -794,11 +789,11 @@ function triggerWifiProtocol() {
         try {
             synth.cancel(); 
             isCalling = true;
-            isSinaTalking = false;
+            safetyLock = false;
             await navigator.mediaDevices.getUserMedia({ audio: true });
             appContent.style.display = 'none';
             callModal.style.display = 'flex';
-            document.getElementById('call-status').innerText = "LINK ESTABLISHED";
+            document.getElementById('call-status').innerText = "SYSTEM READY";
             initiateContinuousSpeech();
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
@@ -814,13 +809,16 @@ function triggerWifiProtocol() {
         recognition.lang = 'en-US';
 
         recognition.onstart = () => {
-            if (!isProcessing && !isSinaTalking) {
+            if (!isProcessing && !safetyLock) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
                 document.getElementById('call-status').style.color = "var(--neon-green)";
             }
         };
 
         recognition.onresult = async (event) => {
+            // IF SINA IS TALKING, IGNORE THE MIC COMPLETELY
+            if (safetyLock) return; 
+
             let interimTranscript = '';
             let finalTranscript = '';
 
@@ -829,28 +827,22 @@ function triggerWifiProtocol() {
                 else interimTranscript += event.results[i][0].transcript;
             }
 
-            // --- IMPROVED INTERRUPT LOGIC ---
-            // Only allow interruption if SINA hasn't already started a long response
-            if (interimTranscript.trim().length > 0 && synth.speaking) {
-                // If user says "Stop", kill everything
-                if (interimTranscript.toLowerCase().includes("stop")) {
-                    synth.cancel();
-                    isSinaTalking = false;
-                    isProcessing = false;
-                    return;
-                }
-                // If SINA just started (first 2 seconds), allow barge-in. 
-                // If she is deep into an explanation, we don't let her hear herself.
+            // Interrupt logic: Only if you say something while she is NOT in "Safety Lock"
+            if (interimTranscript.trim().length > 0 && synth.speaking && !safetyLock) {
+                synth.cancel();
             }
 
-            if (interimTranscript && !isSinaTalking) {
+            if (interimTranscript) {
                  document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
             }
 
-            if (finalTranscript.trim().length > 0 && !isSinaTalking) {
+            if (finalTranscript.trim().length > 0) {
                 document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
-                document.getElementById('call-status').innerText = "SINA IS THINKING...";
+                document.getElementById('call-status').innerText = "THINKING...";
                 isProcessing = true;
+                
+                // Stop ears while thinking to prevent double-triggering
+                recognition.stop(); 
                 
                 const aiResponse = await getAIResponse(finalTranscript);
                 if (isCalling) speakResponse(aiResponse);
@@ -858,8 +850,7 @@ function triggerWifiProtocol() {
         };
 
         recognition.onend = () => {
-            // Only restart if not processing or talking
-            if (isCalling && !isProcessing && !isSinaTalking) {
+            if (isCalling && !isProcessing && !safetyLock) {
                 setTimeout(() => { try { recognition.start(); } catch(e){} }, 300);
             }
         };
@@ -878,30 +869,29 @@ function triggerWifiProtocol() {
                 body: JSON.stringify({ 
                     model: "llama-3.3-70b-versatile",
                     messages: [
-                        { role: "system", content: "You are SINA. You are on a real voice call. Talk naturally. Use complete sentences. If you are explaining something, don't rush. Avoid symbols like * or #." },
+                        { role: "system", content: "You are SINA. You are on a phone call. Speak naturally and fully. Do not use symbols like * or #. If the user asks a question, give a full, detailed response." },
                         { role: "user", content: userText }
                     ],
-                    temperature: 0.8,
-                    max_tokens: 800 
+                    temperature: 0.7,
+                    max_tokens: 1000 
                 })
             });
             const data = await res.json();
             return data.choices[0].message.content;
-        } catch (error) { return "I'm sorry, the connection is unstable."; }
+        } catch (error) { return "I'm sorry, my neural link is flickering."; }
     }
 
     function speakResponse(text) {
         if (!isCalling) return;
         
-        isSinaTalking = true; // LOCK ON
-        const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
+        // ACTIVATE SAFETY LOCK - Mic input will be ignored now
+        safetyLock = true; 
         
-        // Voice Selection
+        const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
         const voices = synth.getVoices();
         utterance.voice = voices.find(v => v.name.includes('Google US English')) || voices[0];
         
-        // Speed Adjustment: 0.9 is more human and less likely to "trip" the browser
-        utterance.rate = 0.9; 
+        utterance.rate = 1.0; 
         utterance.pitch = 1.0;
 
         utterance.onstart = () => {
@@ -910,8 +900,8 @@ function triggerWifiProtocol() {
         };
 
         utterance.onend = () => {
-            // LOCK OFF: Now she can listen again
-            isSinaTalking = false;
+            // RELEASE SAFETY LOCK - Now she can listen again
+            safetyLock = false; 
             isProcessing = false;
             if (isCalling) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
@@ -921,7 +911,7 @@ function triggerWifiProtocol() {
         };
 
         utterance.onerror = () => {
-            isSinaTalking = false;
+            safetyLock = false;
             isProcessing = false;
         };
         
@@ -930,7 +920,7 @@ function triggerWifiProtocol() {
 
     function endVoiceCall() {
         isCalling = false;
-        isSinaTalking = false;
+        safetyLock = false;
         isProcessing = false;
         if (recognition) { recognition.onend = null; recognition.abort(); }
         synth.cancel(); 
