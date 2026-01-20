@@ -201,23 +201,28 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
     position: fixed;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 55vw;
+    font-size: 50vw;
     font-weight: 900;
     font-family: 'Inter', sans-serif;
-    background: linear-gradient(135deg, rgba(57,255,20,0.1), #ffffff, rgba(57,255,20,0.1));
+    /* This creates the metallic look instead of a white box */
+    background: linear-gradient(135deg, 
+        rgba(57, 255, 20, 0.1) 0%, 
+        rgba(255, 255, 255, 0.4) 50%, 
+        rgba(57, 255, 20, 0.1) 100%);
     background-size: 200% auto;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    z-index: 1;
-    animation: metallic-shine 3s linear infinite;
-    opacity: 0.25;
     pointer-events: none;
+    z-index: 1;
+    filter: drop-shadow(0 0 20px var(--accent-glow));
+    animation: metallic-shine 4s linear infinite, beacon-pulse 3s ease-in-out infinite;
 }
 
-@keyframes metallic-shine {
-    to { background-position: 200% center; }
+@keyframes metallic-shine { to { background-position: 200% center; } }
+@keyframes beacon-pulse {
+    0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.05); }
 }
-		
     </style>
 </head>
 	
@@ -969,91 +974,69 @@ function createBridgeUI() {
 }
 
 
-	// --- SENDER LOGIC: THE ONE POINTING THE CAMERA ---
-// --- SENDER: Point Camera at Receiver ---
+// 1. RECEIVER SIDE (Device seeing the S)
+function startPassiveReceivingMode() {
+    const myID = localStorage.getItem('sina_session');
+    if (!myID) return;
+
+    // Connect to PeerJS network using your username
+    if (!window.peer) {
+        window.peer = new Peer(myID.toLowerCase());
+        window.peer.on('connection', (conn) => {
+            conn.on('data', (data) => {
+                // Incoming file detected!
+                saveToVault(data.file);
+                document.body.style.boxShadow = "inset 0 0 100px var(--neon-green)";
+                setTimeout(() => document.body.style.boxShadow = "none", 1000);
+                alert("NEURAL INJECTION SUCCESSFUL");
+                toggleVault(); toggleVault(); // Refresh
+            });
+        });
+    }
+}
+
+// 2. SENDER SIDE (Device with the Camera)
 async function initiateVisualBeam(fileContent) {
     if(!document.getElementById('visual-bridge')) createBridgeUI();
     
     document.getElementById('vault-modal').style.display = 'none';
-    const bridge = document.getElementById('visual-bridge');
-    bridge.style.display = 'flex';
-    const status = document.getElementById('bridge-status');
+    document.getElementById('visual-bridge').style.display = 'flex';
     
+    const status = document.getElementById('bridge-status');
+    const video = document.getElementById('bridge-video');
+
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        document.getElementById('bridge-video').srcObject = stream;
-        document.getElementById('bridge-video').play();
+        video.srcObject = stream;
+        video.play();
 
-        status.innerText = "SCANNING FOR NEURAL S-SIGN...";
+        status.innerText = "SENSING NEURAL BEACON...";
 
-        // Pointing at the screen triggers the auto-send
-        setTimeout(async () => {
-            // 1. Fetch the ID of whoever is currently showing their 'S' sign
-            const res = await fetch('https://keyvalue.xyz/v1/sina-active-beacon');
-            const targetID = await res.text();
-            const myID = localStorage.getItem('sina_session');
-
-            if (targetID && targetID !== myID) {
-                status.innerText = `TARGET ACQUIRED: ${targetID.toUpperCase()}`;
-                status.style.color = "var(--neon-green)";
-
-                // 2. Beam the file to that specific target's mailbox
-                await fetch(`https://keyvalue.xyz/v1/sina-transfer-${targetID}`, {
-                    method: 'POST',
-                    body: JSON.stringify({ file: fileContent, sender: myID })
+        // AUTOMATIC SCANNER SIMULATION
+        // Since we can't 'see' the name, we simulate the lock-on
+        setTimeout(() => {
+            const targetID = prompt("BEACON DETECTED. ENTER NODE ID:");
+            if(targetID) {
+                status.innerText = "BEAMING DATA...";
+                
+                const senderPeer = new Peer();
+                senderPeer.on('open', () => {
+                    const conn = senderPeer.connect(targetID.toLowerCase());
+                    conn.on('open', () => {
+                        conn.send({ file: fileContent });
+                        status.innerText = "TRANSFER COMPLETE";
+                        setTimeout(() => closeBridge(), 1500);
+                    });
                 });
-
-                status.innerText = "BEAM COMPLETE";
-                setTimeout(() => closeBridge(), 1500);
             } else {
-                status.innerText = "NO TARGET FOUND. ALIGN DEVICES.";
-                status.style.color = "#ff4444";
-                setTimeout(() => closeBridge(), 2500);
+                closeBridge();
             }
-        }, 3000); 
-
-    } catch (err) {
-        alert("Camera Error: " + err.message);
+        }, 2000);
+    } catch (e) {
+        alert("Camera Error: " + e);
         closeBridge();
     }
 }
-
-// --- RECEIVER: Displaying the 'S' Sign ---
-function startPassiveReceivingMode() {
-    const currentUser = localStorage.getItem('sina_session');
-    if (!currentUser) return;
-
-    // 1. BROADCAST: Tell the relay "I am looking at my screen, I am ready"
-    fetch('https://keyvalue.xyz/v1/sina-active-beacon', { method: 'POST', body: currentUser });
-
-    if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
-    
-    // 2. LISTEN: Check mailbox for incoming beams
-    window.receiveCheckInterval = setInterval(async () => {
-        try {
-            const res = await fetch(`https://keyvalue.xyz/v1/sina-transfer-${currentUser}`);
-            const dataStr = await res.text();
-            
-            if (dataStr && dataStr.length > 10) { // Check if it's actual file data
-                const data = JSON.parse(dataStr);
-                if (data.sender !== currentUser) {
-                    saveToVault(data.file);
-                    
-                    // Clear the mailbox so we don't download it again
-                    fetch(`https://keyvalue.xyz/v1/sina-transfer-${currentUser}`, { method: 'POST', body: "" });
-                    
-                    // Flash screen green on success
-                    document.body.style.boxShadow = "inset 0 0 100px var(--neon-green)";
-                    setTimeout(() => {
-                        document.body.style.boxShadow = "none";
-                        toggleVault(); toggleVault(); // Refresh Vault View
-                    }, 1000);
-                }
-            }
-        } catch(e) {}
-    }, 2000);
-}
-
 </script>
 
 
