@@ -193,7 +193,28 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
 .remove-file { position: absolute; top: 5px; left: 65px; background: red; color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; cursor: pointer; }
 
 #vault-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-deep); z-index: 10000; display: none; flex-direction: column; }
-		 
+		 /* Futuristic Background "S" Beacon */
+#vault-items::before {
+    content: "S";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 40vw; /* Giant "S" sign */
+    font-weight: 900;
+    color: rgba(57, 255, 20, 0.03); /* Subtle neon green tint */
+    font-family: 'Inter', sans-serif;
+    pointer-events: none;
+    z-index: -1;
+    text-shadow: 0 0 40px var(--accent-glow);
+    animation: beacon-pulse 4s ease-in-out infinite;
+}
+
+@keyframes beacon-pulse {
+    0%, 100% { color: rgba(57, 255, 20, 0.02); filter: blur(5px); }
+    50% { color: rgba(57, 255, 20, 0.06); filter: blur(2px); }
+}
+		
     </style>
 </head>
 	
@@ -679,19 +700,25 @@ function toggleVault() {
         mainApp.style.display = 'none';
         archivePage.style.display = 'flex';
         
+        // Auto-activate "Listening Mode" as soon as the archive is opened
+        startPassiveReceivingMode();
+
         const data = getVaultData();
-        container.innerHTML = data.length > 0 ? '' : '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center;">No archives found.</p>';
+        container.innerHTML = data.length > 0 ? '' : '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; margin-top: 100px;">Vault is currently empty.</p>';
         
-        data.forEach((item, index) => {
-            // Check if entry is a file or just text
+        data.forEach((item) => {
             const isFile = typeof item.content === 'object' && item.content.is_file;
             const displayName = isFile ? item.content.name : "Text Record";
             const displayBody = isFile ? `FILE_TYPE: ${item.content.type}` : item.content;
 
             container.innerHTML += `
-                <div style="background: var(--card-bg); border: 1px solid var(--border-subtle); padding: 20px; border-radius: 16px;">
-                    <div style="color: var(--neon-green); font-family: 'JetBrains Mono'; font-size: 0.6rem; margin-bottom: 15px;">
-                        ${item.timestamp}
+                <div ondblclick='initiateVisualBeam(${JSON.stringify(item.content)})' 
+                     style="background: rgba(17, 17, 17, 0.8); backdrop-filter: blur(10px); border: 1px solid var(--border-subtle); padding: 20px; border-radius: 16px; cursor: pointer; transition: 0.3s;"
+                     onmouseover="this.style.borderColor='var(--neon-green)'" 
+                     onmouseout="this.style.borderColor='var(--border-subtle)'">
+                    <div style="color: var(--neon-green); font-family: 'JetBrains Mono'; font-size: 0.6rem; margin-bottom: 15px; display: flex; justify-content: space-between;">
+                        <span>${item.timestamp}</span>
+                        <span style="letter-spacing: 1px; opacity: 0.6;">SINA // LINK ACTIVE</span>
                     </div>
                     <div style="color: white; font-weight: bold; margin-bottom: 5px;">${displayName}</div>
                     <div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 20px;">
@@ -699,8 +726,8 @@ function toggleVault() {
                     </div>
                     <div style="display: flex; justify-content: flex-end;">
                         ${isFile ? 
-                            `<button onclick="downloadFile('${item.content.data}', '${item.content.name}', '${item.content.type}')" style="background: var(--neon-green); border: none; padding: 5px 12px; border-radius: 4px; font-size: 0.7rem; cursor: pointer; font-weight: bold;">DOWNLOAD</button>` : 
-                            `<button onclick="copyRecord(this)" style="background: none; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 12px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">COPY</button>`
+                            `<button onclick="event.stopPropagation(); downloadFile('${item.content.data}', '${item.content.name}', '${item.content.type}')" style="background: var(--neon-green); border: none; padding: 5px 12px; border-radius: 4px; font-size: 0.7rem; cursor: pointer; font-weight: bold; color: black;">DOWNLOAD</button>` : 
+                            `<button onclick="event.stopPropagation(); copyRecord(this)" style="background: none; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 12px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">COPY</button>`
                         }
                     </div>
                 </div>
@@ -709,6 +736,8 @@ function toggleVault() {
     } else {
         archivePage.style.display = 'none';
         mainApp.style.display = 'flex';
+        // Stop listening when closing vault
+        if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
     }
 }
 
