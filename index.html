@@ -795,49 +795,76 @@ function triggerWifiProtocol() {
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
 
-    function startListening() {
-        if (!isCalling || synth.speaking) return;
+   function startListening() {
+    if (!isCalling || synth.speaking) return;
 
-        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRec();
-        recognition.continuous = false; 
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRec();
+    recognition.continuous = false; 
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
 
-        recognition.onstart = () => {
-            document.getElementById('call-status').innerText = "SINA IS LISTENING...";
-            document.getElementById('call-status').style.color = "var(--neon-green)";
-        };
+    recognition.onstart = () => {
+        document.getElementById('call-status').innerText = "SINA IS LISTENING...";
+        document.getElementById('call-status').style.color = "var(--neon-green)";
+    };
 
-        recognition.onresult = (event) => {
-            let interim = '';
-            let final = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) final += event.results[i][0].transcript;
-                else interim += event.results[i][0].transcript;
-            }
+    recognition.onresult = (event) => {
+        let interim = '';
+        let final = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) final += event.results[i][0].transcript;
+            else interim += event.results[i][0].transcript;
+        }
 
-            // Interrupt logic: If you speak while she is talking, she stops
-            if (interim.length > 0 && synth.speaking) {
-                synth.cancel();
-            }
+        // --- BARGE-IN INTERRUPT ---
+        // If you speak while SINA is talking, she stops immediately
+        if (interim.length > 0 && synth.speaking) {
+            synth.cancel();
+            document.getElementById('call-status').innerText = "LISTENING...";
+        }
 
-            if (final.trim().length > 0) {
+        // Update the preview text on screen
+        if (interim) {
+            document.getElementById('transcript-preview').innerText = `"${interim}..."`;
+        }
+
+        if (final.trim().length > 0) {
+            document.getElementById('transcript-preview').innerText = `"${final}"`;
+            
+            // --- 1. CHECK FOR COMMANDS (Like "Open Google") ---
+            const isCommand = handleWebCommands(final);
+            
+            if (isCommand) {
+                // If it was a command, we reset processing and wait for next input
+                isProcessing = false; 
+                // We don't call the AI here because handleWebCommands already did the work
+            } else {
+                // --- 2. REGULAR CHAT LOGIC ---
                 isProcessing = true;
-                recognition.stop();
+                recognition.stop(); // Stop ears while SINA thinks
                 getAIResponse(final).then(speakResponse);
             }
-        };
+        }
+    };
 
-        recognition.onend = () => {
-            if (isCalling && !synth.speaking && !isProcessing) {
-                try { recognition.start(); } catch(e) {}
+    recognition.onend = () => {
+        // Auto-restart if the call is active and SINA isn't busy
+        if (isCalling && !synth.speaking && !isProcessing) {
+            try { 
+                recognition.start(); 
+            } catch(e) {
+                console.log("Mic restart prevented: already active.");
             }
-        };
+        }
+    };
 
-        try { recognition.start(); } catch(e) {}
+    try { 
+        recognition.start(); 
+    } catch(e) {
+        console.error("Speech recognition could not start:", e);
     }
-
+}
     async function getAIResponse(userText) {
         document.getElementById('call-status').innerText = "SINA IS THINKING...";
         try {
@@ -898,6 +925,43 @@ function triggerWifiProtocol() {
         document.getElementById('call-modal').style.display = 'none';
         document.getElementById('app-content').style.display = 'flex';
     }
+
+
+
+
+
+function handleWebCommands(transcript) {
+    const text = transcript.toLowerCase().trim();
+    
+    if (text.startsWith("open ")) {
+        let siteName = text.replace("open ", "").trim();
+        siteName = siteName.replace(/[.?]/g, ""); // Clean punctuation
+
+        // Common website mapping
+        const favorites = {
+            "google": "https://www.google.com",
+            "youtube": "https://www.youtube.com",
+            "facebook": "https://www.facebook.com",
+            "github": "https://github.com",
+            "whatsapp": "https://web.whatsapp.com",
+            "instagram": "https://www.instagram.com"
+        };
+
+        let url;
+        if (favorites[siteName]) {
+            url = favorites[siteName];
+        } else {
+            // If not in favorites, use Google's "I'm Feeling Lucky" to find it
+            url = `https://www.google.com/search?q=${encodeURIComponent(siteName)}&btnI=I%27m+Feeling+Lucky`;
+        }
+
+        window.open(url, "_blank");
+        speakResponse(`Opening ${siteName} for you now.`);
+        return true; 
+    }
+    return false; 
+}
+	
 </script>
 
 
