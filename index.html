@@ -799,17 +799,20 @@ function triggerWifiProtocol() {
     }
 
    function startListening() {
-    if (!isCalling || synth.speaking) return;
+    if (!isCalling) return;
 
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new SpeechRec();
-    recognition.continuous = false; 
-    recognition.interimResults = true;
+    recognition.continuous = true; 
+    recognition.interimResults = true; // Required to hear you "mid-sentence"
     recognition.lang = 'en-US';
 
     recognition.onstart = () => {
-        document.getElementById('call-status').innerText = "SINA IS LISTENING...";
-        document.getElementById('call-status').style.color = "var(--neon-green)";
+        // If SINA is talking, we keep the status as speaking, otherwise listening
+        if (!synth.speaking) {
+            document.getElementById('call-status').innerText = "SINA IS LISTENING...";
+            document.getElementById('call-status').style.color = "var(--neon-green)";
+        }
     };
 
     recognition.onresult = (event) => {
@@ -820,54 +823,41 @@ function triggerWifiProtocol() {
             else interim += event.results[i][0].transcript;
         }
 
-        // --- BARGE-IN INTERRUPT ---
-        // If you speak while SINA is talking, she stops immediately
-        if (interim.length > 0 && synth.speaking) {
-            synth.cancel();
-            document.getElementById('call-status').innerText = "LISTENING...";
-        }
-
-        // Update the preview text on screen
-        if (interim) {
-            document.getElementById('transcript-preview').innerText = `"${interim}..."`;
+        // --- BARGE-IN TRIGGER ---
+        // If SINA is speaking and the mic detects ANY sound or the word "stop"
+        if ((interim.length > 2 || final.toLowerCase().includes("stop")) && synth.speaking) {
+            synth.cancel(); // Stop AI voice immediately
+            isProcessing = false; 
+            document.getElementById('call-status').innerText = "SINA IS LISTENING...";
+            document.getElementById('call-status').style.color = "var(--neon-green)";
+            return; // Exit and wait for the rest of your sentence
         }
 
         if (final.trim().length > 0) {
-            document.getElementById('transcript-preview').innerText = `"${final}"`;
-            
-            // --- 1. CHECK FOR COMMANDS (Like "Open Google") ---
+            // Check for Stop command separately when not speaking
+            if (final.toLowerCase().trim() === "stop") {
+                 synth.cancel();
+                 return;
+            }
+
             const isCommand = handleWebCommands(final);
-            
-            if (isCommand) {
-                // If it was a command, we reset processing and wait for next input
-                isProcessing = false; 
-                // We don't call the AI here because handleWebCommands already did the work
-            } else {
-                // --- 2. REGULAR CHAT LOGIC ---
+            if (!isCommand) {
                 isProcessing = true;
-                recognition.stop(); // Stop ears while SINA thinks
+                // Add to history and get AI response
                 getAIResponse(final).then(speakResponse);
             }
         }
     };
 
     recognition.onend = () => {
-        // Auto-restart if the call is active and SINA isn't busy
-        if (isCalling && !synth.speaking && !isProcessing) {
-            try { 
-                recognition.start(); 
-            } catch(e) {
-                console.log("Mic restart prevented: already active.");
-            }
+        if (isCalling && !isProcessing) {
+            try { recognition.start(); } catch(e) {}
         }
     };
 
-    try { 
-        recognition.start(); 
-    } catch(e) {
-        console.error("Speech recognition could not start:", e);
-    }
+    try { recognition.start(); } catch(e) {}
 }
+	
    async function getAIResponse(userText) {
     document.getElementById('call-status').innerText = "SINA ANALYZING...";
     
@@ -912,60 +902,21 @@ function speakResponse(text) {
     
     const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
     
-    // Get all available voices
+    // Choose voice (as configured previously)
     const voices = synth.getVoices();
-    
-    // PRIORITY LIST: We look for these high-quality female voices first
-    const preferredVoices = [
-        "Google US English", 
-        "Microsoft Aria Online (Natural)", 
-        "Microsoft Jenny Online (Natural)",
-        "Samantha", 
-        "Victoria",
-        "Google UK English Female"
-    ];
-
-    let selectedVoice = null;
-
-    // 1. Try to find a match from our beautiful voice list
-    for (let name of preferredVoices) {
-        selectedVoice = voices.find(v => v.name.includes(name));
-        if (selectedVoice) break;
-    }
-
-    // 2. Fallback: If no priority voice found, look for ANY female sounding voice
-    if (!selectedVoice) {
-        selectedVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.lang.includes('en-US'));
-    }
-
-    if (selectedVoice) {
-        utterance.voice = selectedVoice;
-    }
-
-    // Settings for a "Beautiful" tone
-    utterance.rate = 0.95;  // Slightly slower sounds more natural/elegant
-    utterance.pitch = 1.1; // Slightly higher pitch for a clear female tone
-
-    // --- HEARTBEAT FIX (Keep-Alive) ---
-    const keepAlive = setInterval(() => {
-        if (!synth.speaking) {
-            clearInterval(keepAlive);
-        } else {
-            synth.pause();
-            synth.resume();
-        }
-    }, 5000);
+    utterance.voice = voices.find(v => v.name.includes("Google US English")) || voices[0];
+    utterance.rate = 0.95;
 
     utterance.onstart = () => {
-        isProcessing = false;
         document.getElementById('call-status').innerText = "SINA SPEAKING...";
         document.getElementById('call-status').style.color = "white";
+        // Microphone remains ON during onstart to allow barge-in
     };
 
     utterance.onend = () => {
-        clearInterval(keepAlive);
-        if (isCalling) {
-            setTimeout(startListening, 400);
+        if (isCalling && !isProcessing) {
+            document.getElementById('call-status').innerText = "SINA IS LISTENING...";
+            document.getElementById('call-status').style.color = "var(--neon-green)";
         }
     };
 
