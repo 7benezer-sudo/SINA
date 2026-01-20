@@ -882,41 +882,70 @@ function triggerWifiProtocol() {
         } catch (error) { return "Connection flickering."; }
     }
 
-    function speakResponse(text) {
-        if (!isCalling) return;
-        
-        const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
-        const voices = synth.getVoices();
-        utterance.voice = voices.find(v => v.name.includes('Google US English')) || voices[0];
-        utterance.rate = 0.9; 
+function speakResponse(text) {
+    if (!isCalling) return;
+    
+    const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
+    
+    // Get all available voices
+    const voices = synth.getVoices();
+    
+    // PRIORITY LIST: We look for these high-quality female voices first
+    const preferredVoices = [
+        "Google US English", 
+        "Microsoft Aria Online (Natural)", 
+        "Microsoft Jenny Online (Natural)",
+        "Samantha", 
+        "Victoria",
+        "Google UK English Female"
+    ];
 
-        // --- THE FIX: HEARTBEAT FOR ALL DEVICES ---
-        const keepAlive = setInterval(() => {
-            if (!synth.speaking) {
-                clearInterval(keepAlive);
-            } else {
-                // This "resumes" the engine every 5 seconds to prevent timeout
-                synth.pause();
-                synth.resume();
-            }
-        }, 5000);
+    let selectedVoice = null;
 
-        utterance.onstart = () => {
-            isProcessing = false;
-            document.getElementById('call-status').innerText = "SINA SPEAKING...";
-            document.getElementById('call-status').style.color = "white";
-        };
-
-        utterance.onend = () => {
-            clearInterval(keepAlive);
-            if (isCalling) {
-                setTimeout(startListening, 400);
-            }
-        };
-
-        synth.speak(utterance);
+    // 1. Try to find a match from our beautiful voice list
+    for (let name of preferredVoices) {
+        selectedVoice = voices.find(v => v.name.includes(name));
+        if (selectedVoice) break;
     }
 
+    // 2. Fallback: If no priority voice found, look for ANY female sounding voice
+    if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.lang.includes('en-US'));
+    }
+
+    if (selectedVoice) {
+        utterance.voice = selectedVoice;
+    }
+
+    // Settings for a "Beautiful" tone
+    utterance.rate = 0.95;  // Slightly slower sounds more natural/elegant
+    utterance.pitch = 1.1; // Slightly higher pitch for a clear female tone
+
+    // --- HEARTBEAT FIX (Keep-Alive) ---
+    const keepAlive = setInterval(() => {
+        if (!synth.speaking) {
+            clearInterval(keepAlive);
+        } else {
+            synth.pause();
+            synth.resume();
+        }
+    }, 5000);
+
+    utterance.onstart = () => {
+        isProcessing = false;
+        document.getElementById('call-status').innerText = "SINA SPEAKING...";
+        document.getElementById('call-status').style.color = "white";
+    };
+
+    utterance.onend = () => {
+        clearInterval(keepAlive);
+        if (isCalling) {
+            setTimeout(startListening, 400);
+        }
+    };
+
+    synth.speak(utterance);
+}
     function endVoiceCall() {
         isCalling = false;
         isProcessing = false;
