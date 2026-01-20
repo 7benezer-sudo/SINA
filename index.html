@@ -470,17 +470,19 @@ function toggleSettings() {
         document.getElementById('file-preview-container').style.display = 'none';
     }
 
-async function sendPrompt() {
+
+    function appendMsg(text, type, id) {
+        const win = document.getElementById('chat-window');
+        const row = document.createElement('div');
+        row.className = `message-row`;
+        if (id) row.id = id;async function sendPrompt() {
     const input = document.getElementById('userInput');
     const text = input.value.trim();
     
-    // Prevent execution if there is no text and no file selected
     if (!text && !selectedFileBase64) return;
     
-    // Capture the filename if a file is being uploaded
     const fileName = document.getElementById('fileInput').files[0]?.name || "Document";
     
-    // UI Update: Append user message to the chat window
     appendMsg(text || `Uploading ${fileName}...`, 'user');
     input.value = "";
     
@@ -488,8 +490,8 @@ async function sendPrompt() {
     appendMsg('Neural Processing...', 'ai', aiId);
 
     try {
-        // --- 1. VAULT LOGIC: If a file is selected, save it to the archive ---
         if (selectedFileBase64) {
+            // Save to LocalStorage/DB
             saveToVault({
                 name: fileName,
                 type: selectedFileType,
@@ -499,10 +501,16 @@ async function sendPrompt() {
             
             updateMsg(aiId, `The ${fileName} has been successfully uploaded to your Neural Archive.`);
             clearFile();
-            return; // Exit function after successful upload
+
+            // REFRESH VAULT IF OPEN: This ensures the file appears immediately
+            const archivePage = document.getElementById('vault-modal');
+            if (archivePage.style.display === 'flex') {
+                toggleVault(); // Close
+                toggleVault(); // Re-open to rebuild the list
+            }
+            return; 
         }
 
-        // --- 2. AI LOGIC: Connect to the Groq API using a supported model ---
         const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
             method: 'POST',
             headers: { 
@@ -510,38 +518,22 @@ async function sendPrompt() {
                 'Authorization': `Bearer ${apiKey}` 
             },
             body: JSON.stringify({ 
-                model: "llama-3.3-70b-versatile", // Use the latest supported model
+                model: "llama-3.3-70b-versatile",
                 messages: [{ role: "user", content: text }],
                 temperature: 0.7
             })
         });
 
         const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
 
-        // Check for API-level errors (like invalid keys or decommissioned models)
-        if (data.error) {
-            throw new Error(data.error.message || "Unknown Neural Link Error");
-        }
-
-        // Verify the response structure before attempting to display it
-        if (data.choices && data.choices[0] && data.choices[0].message) {
+        if (data.choices && data.choices[0]) {
             updateMsg(aiId, data.choices[0].message.content);
-        } else {
-            throw new Error("Neural Archive returned an empty response.");
         }
-
     } catch (e) {
-        // Log error to console and update the UI with a descriptive failure message
-        console.error("Critical AI Error:", e);
         updateMsg(aiId, "Neural Link Failure: " + e.message);
     }
 }
-
-    function appendMsg(text, type, id) {
-        const win = document.getElementById('chat-window');
-        const row = document.createElement('div');
-        row.className = `message-row`;
-        if (id) row.id = id;
         row.innerHTML = `<div class="${type}-avatar">${type[0].toUpperCase()}</div><div class="message-content">${text}</div>`;
         win.appendChild(row);
         win.scrollTop = win.scrollHeight;
@@ -700,28 +692,37 @@ function toggleVault() {
         mainApp.style.display = 'none';
         archivePage.style.display = 'flex';
         
-        // Auto-activate "Listening Mode" as soon as the archive is opened
-        startPassiveReceivingMode();
+        // Start checking for "Beams"
+        if (typeof startPassiveReceivingMode === "function") startPassiveReceivingMode();
 
         const data = getVaultData();
-        container.innerHTML = data.length > 0 ? '' : '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; margin-top: 100px;">Vault is currently empty.</p>';
         
+        // Clear container and keep it empty if no data
+        container.innerHTML = "";
+        
+        if (data.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; margin-top: 100px;">Neural Archive is empty. Upload files via terminal.</p>';
+            return;
+        }
+
         data.forEach((item) => {
             const isFile = typeof item.content === 'object' && item.content.is_file;
             const displayName = isFile ? item.content.name : "Text Record";
-            const displayBody = isFile ? `FILE_TYPE: ${item.content.type}` : item.content;
+            const displayBody = isFile ? `TYPE: ${item.content.type}` : item.content;
 
+            // Using your requested shiny background and double-click beam logic
             container.innerHTML += `
-                <div ondblclick='initiateVisualBeam(${JSON.stringify(item.content)})' 
-                     style="background: rgba(17, 17, 17, 0.8); backdrop-filter: blur(10px); border: 1px solid var(--border-subtle); padding: 20px; border-radius: 16px; cursor: pointer; transition: 0.3s;"
-                     onmouseover="this.style.borderColor='var(--neon-green)'" 
-                     onmouseout="this.style.borderColor='var(--border-subtle)'">
+                <div ondblclick='if(typeof initiateVisualBeam === "function") initiateVisualBeam(${JSON.stringify(item.content)})' 
+                     style="background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(57, 255, 20, 0.1); padding: 20px; border-radius: 16px; cursor: pointer; transition: 0.3s;"
+                     onmouseover="this.style.borderColor='var(--neon-green)';" 
+                     onmouseout="this.style.borderColor='rgba(57, 255, 20, 0.1)';"
+                >
                     <div style="color: var(--neon-green); font-family: 'JetBrains Mono'; font-size: 0.6rem; margin-bottom: 15px; display: flex; justify-content: space-between;">
                         <span>${item.timestamp}</span>
-                        <span style="letter-spacing: 1px; opacity: 0.6;">SINA // LINK ACTIVE</span>
+                        <span style="opacity: 0.5;">DBL-CLICK TO BEAM</span>
                     </div>
-                    <div style="color: white; font-weight: bold; margin-bottom: 5px;">${displayName}</div>
-                    <div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 20px;">
+                    <div style="color: white; font-weight: bold; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayName}</div>
+                    <div style="color: var(--text-muted); font-size: 0.75rem; margin-bottom: 20px;">
                         ${displayBody}
                     </div>
                     <div style="display: flex; justify-content: flex-end;">
@@ -736,7 +737,6 @@ function toggleVault() {
     } else {
         archivePage.style.display = 'none';
         mainApp.style.display = 'flex';
-        // Stop listening when closing vault
         if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
     }
 }
