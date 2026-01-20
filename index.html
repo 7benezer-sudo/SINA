@@ -777,135 +777,88 @@ function triggerWifiProtocol() {
 
 
 
-
-
 <script>
     // --- CONFIGURATION ---
-    // Updated API Key provided by user
     const voiceApiKey = "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"; 
     
     let recognition;
     let isCalling = false;
     let synth = window.speechSynthesis;
+    let isProcessing = false;
 
-    // --- 1. INITIALIZE CALL ---
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
         const appContent = document.getElementById('app-content');
-        
-        // Check if modal is already open
-        if (callModal.style.display === 'flex') {
-            endVoiceCall();
-            return;
-        }
-
+        if (callModal.style.display === 'flex') { endVoiceCall(); return; }
         try {
-            // Request Mic Permission
-            await navigator.mediaDevices.getUserMedia({ audio: true });
-            
+            synth.cancel(); 
             isCalling = true;
+            isProcessing = false;
+            await navigator.mediaDevices.getUserMedia({ audio: true });
             appContent.style.display = 'none';
             callModal.style.display = 'flex';
-            
-            // Start the Loop
+            document.getElementById('call-status').innerText = "ESTABLISHING NEURAL LINK...";
             initiateContinuousSpeech();
-            
-        } catch (err) {
-            console.error(err);
-            alert("Microphone access denied or not supported. Check browser permissions.");
-            endVoiceCall(); // Reset UI if failed
-        }
+        } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
 
-    // --- 2. SPEECH RECOGNITION (EARS) ---
     function initiateContinuousSpeech() {
-        // Support for Chrome/Edge/Safari
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
-        if (!SpeechRec) {
-            alert("Voice features are not supported in this browser. Try Chrome.");
-            return;
-        }
+        if (!SpeechRec) return;
+        if (recognition) { recognition.stop(); recognition = null; }
 
         recognition = new SpeechRec();
-        recognition.continuous = true;     // Keep listening even after silence
-        recognition.interimResults = true; // Essential for "Barge-in" (Interrupting)
+        recognition.continuous = true;
+        recognition.interimResults = true;
         recognition.lang = 'en-US';
 
         recognition.onstart = () => {
-            document.getElementById('call-status').innerText = "SINA IS LISTENING...";
-            document.getElementById('call-status').style.color = "var(--neon-green)";
+            if (!isProcessing) {
+                document.getElementById('call-status').innerText = "SINA IS LISTENING...";
+                document.getElementById('call-status').style.color = "var(--neon-green)";
+            }
         };
 
         recognition.onresult = async (event) => {
             let finalTranscript = '';
             let interimTranscript = '';
-
             for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
-                } else {
-                    interimTranscript += event.results[i][0].transcript;
-                }
+                if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                else interimTranscript += event.results[i][0].transcript;
             }
 
-            // --- BARGE-IN LOGIC ---
-            // If user is saying anything (even incomplete sentences), STOP SINA from talking.
+            // BARGE-IN: If you speak, she stops.
             if (interimTranscript.length > 0 || finalTranscript.length > 0) {
                 if (synth.speaking) {
                     synth.cancel();
-                    document.getElementById('call-status').innerText = "INTERRUPTED...";
+                    document.getElementById('call-status').innerText = "LISTENING...";
                 }
             }
 
-            // Update UI with live text
             if (interimTranscript) {
                  document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
             }
 
-            // --- FINAL PROCESSING ---
-            // Only send to AI when the user is done with the sentence
             if (finalTranscript.trim().length > 0) {
                 document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
-                document.getElementById('call-status').innerText = "PROCESSING...";
-                
-                // Pause recognition briefly so SINA doesn't hear herself
+                document.getElementById('call-status').innerText = "THINKING...";
+                isProcessing = true;
                 recognition.stop(); 
-                
-                // Get AI Text
                 const aiResponse = await getAIResponse(finalTranscript);
-                
-                // Speak it out
-                if (isCalling && aiResponse) {
-                    speakResponse(aiResponse);
-                } else if (isCalling) {
-                    // If error or empty, start listening again
-                    recognition.start();
-                }
-            }
-        };
-
-        recognition.onerror = (event) => {
-            console.error("Speech Error:", event.error);
-            // If it's just a 'no-speech' error, ignore it. 
-            // If it's 'aborted', it might be because we stopped it manually to speak.
-            if (event.error !== 'no-speech' && event.error !== 'aborted') {
-                document.getElementById('call-status').innerText = "SIGNAL LOSS: " + event.error;
+                if (isCalling) speakResponse(aiResponse);
             }
         };
 
         recognition.onend = () => {
-            // Auto-restart listener if we are still in call mode AND SINA is NOT talking
-            // (If SINA is talking, we wait for her to finish before restarting mic to avoid echo)
-            if (isCalling && !synth.speaking) {
-                try { recognition.start(); } catch(e) { /* ignore already started errors */ }
+            if (isCalling && !synth.speaking && !isProcessing) {
+                setTimeout(() => { try { recognition.start(); } catch(e){} }, 500);
             }
         };
 
         try { recognition.start(); } catch(e) {}
     }
 
-    // --- 3. AI BRAIN (THE MISSING FUNCTION) ---
+    // --- AI BRAIN (NATURAL SETTINGS) ---
     async function getAIResponse(userText) {
         try {
             const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
@@ -919,44 +872,28 @@ function triggerWifiProtocol() {
                     messages: [
                         { 
                             role: "system", 
-                            content: "You are SINA, a highly advanced AI interface. Keep your voice responses concise, conversational, and somewhat robotic/cool. Do not use markdown. Do not be too wordy." 
+                            content: "You are SINA. You are having a real-time voice call with your operator. Speak naturally like a human. Do not use lists or bullet points. Use full, descriptive sentences. Be warm, intelligent, and helpful. If they ask a deep question, give a detailed answer. Avoid all markdown like **bold** or *italics*." 
                         },
                         { role: "user", content: userText }
                     ],
-                    temperature: 0.7,
-                    max_tokens: 150 // Keep voice replies short
+                    temperature: 0.8, // Higher temperature = more natural/creative
+                    max_tokens: 600   // Increased for longer, more detailed speech
                 })
             });
-
             const data = await res.json();
-            if (data.choices && data.choices.length > 0) {
-                return data.choices[0].message.content;
-            }
-            return "Connection unstable. Please repeat.";
-        } catch (error) {
-            console.error("API Error", error);
-            return "Neural Link Offline.";
-        }
+            return data.choices[0].message.content;
+        } catch (error) { return "I'm having trouble connecting to my neural network."; }
     }
 
-    // --- 4. TEXT TO SPEECH (MOUTH) ---
     function speakResponse(text) {
         if (!isCalling) return;
-
-        // Clean text (remove any emojis or code blocks for speech)
-        const cleanText = text.replace(/[*#]/g, ''); 
-
+        const cleanText = text.replace(/[*#_]/g, ''); 
         const utterance = new SpeechSynthesisUtterance(cleanText);
-        
-        // Voice Selection
         const voices = synth.getVoices();
-        // Try to find a female/AI sounding voice
         const preferredVoice = voices.find(v => v.name.includes('Google US English')) || 
-                               voices.find(v => v.name.includes('Samantha')) || 
                                voices.find(v => v.lang.includes('en-US'));
-        
         if (preferredVoice) utterance.voice = preferredVoice;
-        utterance.rate = 1.05; // Slightly faster
+        utterance.rate = 1.0; 
         utterance.pitch = 1.0;
 
         utterance.onstart = () => {
@@ -966,33 +903,24 @@ function triggerWifiProtocol() {
 
         utterance.onend = () => {
             if (isCalling) {
+                isProcessing = false;
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
                 document.getElementById('call-status').style.color = "var(--neon-green)";
-                // Resume listening immediately after talking
                 try { recognition.start(); } catch(e) {}
             }
         };
-
-        // Speak
         synth.speak(utterance);
     }
 
-    // --- 5. HANG UP ---
     function endVoiceCall() {
         isCalling = false;
-        if (recognition) {
-            recognition.onend = null; // Stop the auto-restart loop
-            recognition.abort();      // Kill mic immediately
-        }
-        synth.cancel(); // Stop talking immediately
-        
+        isProcessing = false;
+        if (recognition) { recognition.onend = null; recognition.abort(); }
+        synth.cancel(); 
         document.getElementById('call-modal').style.display = 'none';
         document.getElementById('app-content').style.display = 'flex';
     }
 </script>
-
-
-
 
 
 
