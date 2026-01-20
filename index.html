@@ -199,19 +199,26 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
     position: fixed;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 45vw;
+    font-size: 50vw;
     font-weight: 900;
-    /* This gradient creates the shiny metallic "Target" */
-    background: linear-gradient(135deg, rgba(57,255,20,0.01) 0%, rgba(255,255,255,0.2) 50%, rgba(57,255,20,0.01) 100%);
+    font-family: 'Inter', sans-serif;
+    /* Shiny metallic gradient */
+    background: linear-gradient(135deg, 
+        rgba(57, 255, 20, 0.05) 0%, 
+        rgba(255, 255, 255, 0.3) 50%, 
+        rgba(57, 255, 20, 0.05) 100%);
     background-size: 200% auto;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     pointer-events: none;
     z-index: 1;
-    animation: metallic-shine 6s linear infinite;
+    animation: metallic-shine 4s linear infinite, beacon-pulse 3s ease-in-out infinite;
 }
 
-@keyframes metallic-shine { to { background-position: 200% center; } }
+@keyframes beacon-pulse {
+    0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.05); }
+}
 		
     </style>
 </head>
@@ -912,54 +919,6 @@ function triggerWifiProtocol() {
 }
 
 
-	// --- SENDER: Double Click Logic ---
-async function initiateVisualBeam(fileContent) {
-    if(!document.getElementById('visual-bridge')) createBridgeUI();
-    
-    document.getElementById('vault-modal').style.display = 'none';
-    const bridge = document.getElementById('visual-bridge');
-    bridge.style.display = 'flex';
-    const status = document.getElementById('bridge-status');
-    
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        document.getElementById('bridge-video').srcObject = stream;
-        document.getElementById('bridge-video').play();
-
-        status.innerText = "SENSING NEURAL FREQUENCIES...";
-
-        // AUTOMATIC DETECTION: No prompts
-        setTimeout(() => {
-            const targetID = localStorage.getItem('active_beacon');
-            
-            if (targetID) {
-                status.innerText = `LOCK ACQUIRED: ${targetID.toUpperCase()}`;
-                status.style.color = "white";
-
-                // BEAMING DATA
-                localStorage.setItem('neural_handshake', JSON.stringify({
-                    target: targetID,
-                    file: fileContent
-                }));
-
-                // Success Animation
-                setTimeout(() => {
-                    status.innerText = "BEAM COMPLETE";
-                    setTimeout(() => closeBridge(), 1000);
-                }, 1000);
-            } else {
-                status.innerText = "NO TARGET DETECTED. ALIGN SCREENS.";
-                status.style.color = "red";
-                setTimeout(() => closeBridge(), 2000);
-            }
-        }, 2000); // 2 seconds to "find" the target
-
-    } catch (err) {
-        alert("Camera Error: " + err.message);
-        closeBridge();
-    }
-}
-
 function closeBridge() {
     const bridge = document.getElementById('visual-bridge');
     if(bridge) bridge.style.display = 'none';
@@ -984,30 +943,95 @@ function createBridgeUI() {
 }
 
 
+	// --- SENDER LOGIC: THE ONE POINTING THE CAMERA ---
+async function initiateVisualBeam(fileContent) {
+    if(!document.getElementById('visual-bridge')) createBridgeUI();
+    
+    document.getElementById('vault-modal').style.display = 'none';
+    const bridge = document.getElementById('visual-bridge');
+    bridge.style.display = 'flex';
+    const status = document.getElementById('bridge-status');
+    
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        document.getElementById('bridge-video').srcObject = stream;
+        document.getElementById('bridge-video').play();
 
-	function startPassiveReceivingMode() {
+        status.innerText = "ALIGNING WITH NEURAL BEACON...";
+
+        // Simulation of the camera "recognizing" the S sign
+        setTimeout(() => {
+            // We look for any active beacon that IS NOT US
+            const targetID = localStorage.getItem('active_beacon');
+            const myID = localStorage.getItem('sina_session');
+
+            if (targetID && targetID !== myID) {
+                status.innerText = `NODE DETECTED: ${targetID.toUpperCase()}`;
+                status.style.color = "var(--neon-green)";
+
+                // SENDING to the target
+                localStorage.setItem('neural_handshake', JSON.stringify({
+                    target: targetID,
+                    file: fileContent,
+                    sender: myID
+                }));
+
+                setTimeout(() => {
+                    status.innerText = "DATA BEAMED SUCCESSFULLY";
+                    setTimeout(() => closeBridge(), 1500);
+                }, 1000);
+            } else {
+                status.innerText = "NO REMOTE TARGET DETECTED";
+                status.style.color = "#ff4444";
+                setTimeout(() => closeBridge(), 2000);
+            }
+        }, 2500); 
+
+    } catch (err) {
+        alert("Camera Error: " + err.message);
+        closeBridge();
+    }
+}
+
+// --- RECEIVER LOGIC: THE ONE SHOWING THE "S" ---
+function startPassiveReceivingMode() {
     const currentUser = localStorage.getItem('sina_session');
     if (!currentUser) return;
 
-    // 1. ANNOUNCE: Tell the network "I am currently looking at my Vault"
+    // BROADCAST that I am ready to receive
     localStorage.setItem('active_beacon', currentUser);
 
-    // 2. LISTEN: Check for incoming files
     if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
+    
     window.receiveCheckInterval = setInterval(() => {
-        const handshake = JSON.parse(localStorage.getItem('neural_handshake'));
-        if (handshake && handshake.target === currentUser) {
+        const handshakeStr = localStorage.getItem('neural_handshake');
+        if (!handshakeStr) return;
+
+        const handshake = JSON.parse(handshakeStr);
+        
+        // ONLY DOWNLOAD if the target is me and the sender is someone else
+        if (handshake.target === currentUser && handshake.sender !== currentUser) {
             saveToVault(handshake.file);
             
-            // Visual feedback
+            // Visual feedback: Screen flashes green
             document.body.style.boxShadow = "inset 0 0 100px var(--neon-green)";
             setTimeout(() => document.body.style.boxShadow = "none", 1000);
             
+            // Clean up the handshake so it doesn't download again
             localStorage.removeItem('neural_handshake');
-            toggleVault(); toggleVault(); // Refresh UI
+            
+            // Refresh Vault UI
+            const container = document.getElementById('vault-items');
+            if (container) {
+                toggleVault(); // Close
+                toggleVault(); // Re-open
+            }
         }
     }, 1000);
 }
+
+
+
 </script>
 
 
