@@ -778,13 +778,13 @@ function triggerWifiProtocol() {
 
 
 <script>
-    // --- CONFIGURATION ---
     const voiceApiKey = "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"; 
     
     let recognition;
     let isCalling = false;
     let synth = window.speechSynthesis;
-    let isProcessing = false;
+    let isProcessing = false; 
+    let isSinaSpeaking = false; // The "Muzzle" variable
 
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
@@ -793,11 +793,11 @@ function triggerWifiProtocol() {
         try {
             synth.cancel(); 
             isCalling = true;
-            isProcessing = false;
+            isSinaSpeaking = false;
             await navigator.mediaDevices.getUserMedia({ audio: true });
             appContent.style.display = 'none';
             callModal.style.display = 'flex';
-            document.getElementById('call-status').innerText = "ESTABLISHING NEURAL LINK...";
+            document.getElementById('call-status').innerText = "LINK ESTABLISHED";
             initiateContinuousSpeech();
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
@@ -813,13 +813,16 @@ function triggerWifiProtocol() {
         recognition.lang = 'en-US';
 
         recognition.onstart = () => {
-            if (!isProcessing) {
+            if (!isProcessing && !isSinaSpeaking) {
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
                 document.getElementById('call-status').style.color = "var(--neon-green)";
             }
         };
 
         recognition.onresult = async (event) => {
+            // IF SINA IS SPEAKING, IGNORE ALL MIC INPUT (Prevents cutting herself off)
+            if (isSinaSpeaking) return; 
+
             let finalTranscript = '';
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -827,12 +830,9 @@ function triggerWifiProtocol() {
                 else interimTranscript += event.results[i][0].transcript;
             }
 
-            // BARGE-IN: If you speak, she stops.
-            if (interimTranscript.length > 0 || finalTranscript.length > 0) {
-                if (synth.speaking) {
-                    synth.cancel();
-                    document.getElementById('call-status').innerText = "LISTENING...";
-                }
+            // BARGE-IN: Only works if SINA isn't already speaking (to be safe)
+            if (interimTranscript.length > 0 && synth.speaking && !isSinaSpeaking) {
+                synth.cancel();
             }
 
             if (interimTranscript) {
@@ -841,7 +841,7 @@ function triggerWifiProtocol() {
 
             if (finalTranscript.trim().length > 0) {
                 document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
-                document.getElementById('call-status').innerText = "THINKING...";
+                document.getElementById('call-status').innerText = "SINA IS THINKING...";
                 isProcessing = true;
                 recognition.stop(); 
                 const aiResponse = await getAIResponse(finalTranscript);
@@ -850,15 +850,15 @@ function triggerWifiProtocol() {
         };
 
         recognition.onend = () => {
-            if (isCalling && !synth.speaking && !isProcessing) {
-                setTimeout(() => { try { recognition.start(); } catch(e){} }, 500);
+            // Restart mic ONLY if call is active and we aren't waiting for AI or SINA speaking
+            if (isCalling && !isSinaSpeaking && !isProcessing) {
+                setTimeout(() => { try { recognition.start(); } catch(e){} }, 400);
             }
         };
 
         try { recognition.start(); } catch(e) {}
     }
 
-    // --- AI BRAIN (NATURAL SETTINGS) ---
     async function getAIResponse(userText) {
         try {
             const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
@@ -872,28 +872,32 @@ function triggerWifiProtocol() {
                     messages: [
                         { 
                             role: "system", 
-                            content: "You are SINA. You are having a real-time voice call with your operator. Speak naturally like a human. Do not use lists or bullet points. Use full, descriptive sentences. Be warm, intelligent, and helpful. If they ask a deep question, give a detailed answer. Avoid all markdown like **bold** or *italics*." 
+                            content: "You are SINA. You are on a phone call. Talk like a real human. Use natural sentences and emotions. No lists, no markdown. Speak at length if the topic is interesting." 
                         },
                         { role: "user", content: userText }
                     ],
-                    temperature: 0.8, // Higher temperature = more natural/creative
-                    max_tokens: 600   // Increased for longer, more detailed speech
+                    temperature: 0.8,
+                    max_tokens: 800 
                 })
             });
             const data = await res.json();
             return data.choices[0].message.content;
-        } catch (error) { return "I'm having trouble connecting to my neural network."; }
+        } catch (error) { return "I'm sorry, my neural link is flickering."; }
     }
 
     function speakResponse(text) {
         if (!isCalling) return;
+        isSinaSpeaking = true; // LOCK MIC
+        
         const cleanText = text.replace(/[*#_]/g, ''); 
         const utterance = new SpeechSynthesisUtterance(cleanText);
+        
         const voices = synth.getVoices();
         const preferredVoice = voices.find(v => v.name.includes('Google US English')) || 
                                voices.find(v => v.lang.includes('en-US'));
         if (preferredVoice) utterance.voice = preferredVoice;
-        utterance.rate = 1.0; 
+        
+        utterance.rate = 0.95; // Slightly slower makes it more human and less prone to glitches
         utterance.pitch = 1.0;
 
         utterance.onstart = () => {
@@ -902,18 +906,21 @@ function triggerWifiProtocol() {
         };
 
         utterance.onend = () => {
+            isSinaSpeaking = false; // UNLOCK MIC
+            isProcessing = false;
             if (isCalling) {
-                isProcessing = false;
                 document.getElementById('call-status').innerText = "SINA IS LISTENING...";
                 document.getElementById('call-status').style.color = "var(--neon-green)";
                 try { recognition.start(); } catch(e) {}
             }
         };
+        
         synth.speak(utterance);
     }
 
     function endVoiceCall() {
         isCalling = false;
+        isSinaSpeaking = false;
         isProcessing = false;
         if (recognition) { recognition.onend = null; recognition.abort(); }
         synth.cancel(); 
@@ -921,7 +928,6 @@ function triggerWifiProtocol() {
         document.getElementById('app-content').style.display = 'flex';
     }
 </script>
-
 
 
 
