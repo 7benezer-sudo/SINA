@@ -774,6 +774,9 @@ function triggerWifiProtocol() {
 
 <script>
     const voiceApiKey = "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"; 
+	let conversationHistory = [
+    { role: "system", content: "You are SINA. You have a perfect memory of this conversation. Keep responses natural, short, and connected to previous topics." }
+];
     
     let recognition;
     let isCalling = false;
@@ -867,6 +870,16 @@ function triggerWifiProtocol() {
 }
    async function getAIResponse(userText) {
     document.getElementById('call-status').innerText = "SINA ANALYZING...";
+    
+    // 1. Add your new message to her memory
+    conversationHistory.push({ role: "user", content: userText });
+
+    // 2. Keep memory from getting too "heavy" (Keep last 10 messages)
+    if (conversationHistory.length > 11) { 
+        // We keep the first message (system prompt) and the last 10
+        conversationHistory = [conversationHistory[0], ...conversationHistory.slice(-10)];
+    }
+
     try {
         const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
             method: 'POST',
@@ -875,26 +888,22 @@ function triggerWifiProtocol() {
                 'Authorization': `Bearer ${voiceApiKey}` 
             },
             body: JSON.stringify({ 
-                // We use the 8b model here for instant speed
-                model: "llama-3.1-8b-instant", 
-                messages: [
-                    { 
-                        role: "system", 
-                        content: "You are SINA. Response must be extremely fast and natural. No markdown, no symbols. Keep it under 3 sentences unless asked for detail." 
-                    }, 
-                    { role: "user", content: userText }
-                ],
+                model: "llama-3.1-8b-instant", // High speed for real-time feel
+                messages: conversationHistory, // We send the WHOLE memory now
                 temperature: 0.6, 
-                max_tokens: 400, // Shorter tokens = faster generation
-                top_p: 1,
-                stream: false // Streaming is complex for voice, so we keep this false for stability
+                max_tokens: 400
             })
         });
+        
         const data = await res.json();
-        return data.choices[0].message.content;
+        const aiMessage = data.choices[0].message.content;
+
+        // 3. Add SINA's response to her memory so she remembers what she said
+        conversationHistory.push({ role: "assistant", content: aiMessage });
+
+        return aiMessage;
     } catch (error) { 
-        console.error("Speed Error:", error);
-        return "Connection lag detected."; 
+        return "My memory circuit flickered. Could you repeat that?"; 
     }
 }
 
@@ -962,14 +971,36 @@ function speakResponse(text) {
 
     synth.speak(utterance);
 }
-    function endVoiceCall() {
-        isCalling = false;
-        isProcessing = false;
-        if (recognition) { recognition.abort(); }
-        synth.cancel(); 
-        document.getElementById('call-modal').style.display = 'none';
-        document.getElementById('app-content').style.display = 'flex';
+	
+function endVoiceCall() {
+    // 1. Stop the internal calling state
+    isCalling = false;
+    isProcessing = false;
+
+    // 2. Kill the microphone and prevent it from auto-restarting
+    if (recognition) {
+        recognition.onend = null; // Important: breaks the restart loop
+        recognition.abort();      // Immediately stops the mic
     }
+
+    // 3. Stop SINA from speaking mid-sentence
+    synth.cancel(); 
+
+    // 4. Reset Memory (Optional)
+    // If you want SINA to forget everything and start fresh for the NEXT call:
+    // conversationHistory = [conversationHistory[0]]; 
+    
+    // If you want her to remember you even after you hang up and call back,
+    // just leave the line above commented out!
+
+    // 5. Switch the UI back to the main screen
+    document.getElementById('call-modal').style.display = 'none';
+    document.getElementById('app-content').style.display = 'flex';
+    
+    // 6. Reset status text for the next time the modal opens
+    document.getElementById('call-status').innerText = "DISCONNECTED";
+    document.getElementById('transcript-preview').innerText = "Call ended.";
+}
 
 
 
