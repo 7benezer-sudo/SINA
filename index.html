@@ -773,14 +773,12 @@ function triggerWifiProtocol() {
 
 
 <script>
-    // --- CONFIGURATION ---
     const voiceApiKey = "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"; 
     
     let recognition;
     let isCalling = false;
     let synth = window.speechSynthesis;
     let isProcessing = false; 
-    let silenceTimeout;
 
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
@@ -797,13 +795,12 @@ function triggerWifiProtocol() {
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
 
-    // --- 1. EARS (RECOGNITION) ---
     function startListening() {
-        if (!isCalling || synth.speaking) return; // Don't listen if SINA is talking
+        if (!isCalling || synth.speaking) return;
 
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRec();
-        recognition.continuous = false; // Changed to false for cleaner "turns"
+        recognition.continuous = false; 
         recognition.interimResults = true;
         recognition.lang = 'en-US';
 
@@ -813,88 +810,69 @@ function triggerWifiProtocol() {
         };
 
         recognition.onresult = (event) => {
-            let interimTranscript = '';
-            let finalTranscript = '';
-
+            let interim = '';
+            let final = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
-                else interimTranscript += event.results[i][0].transcript;
+                if (event.results[i].isFinal) final += event.results[i][0].transcript;
+                else interim += event.results[i][0].transcript;
             }
 
-            // BARGE-IN: If you speak while she is starting, kill it immediately
-            if (interimTranscript.length > 0 && synth.speaking) {
+            // Interrupt logic: If you speak while she is talking, she stops
+            if (interim.length > 0 && synth.speaking) {
                 synth.cancel();
-                document.getElementById('call-status').innerText = "LISTENING...";
             }
 
-            if (interimTranscript) {
-                document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
-            }
-
-            if (finalTranscript.trim().length > 0) {
-                processUserSpeech(finalTranscript);
+            if (final.trim().length > 0) {
+                isProcessing = true;
+                recognition.stop();
+                getAIResponse(final).then(speakResponse);
             }
         };
 
         recognition.onend = () => {
-            // Auto-restart if not speaking and call is active
             if (isCalling && !synth.speaking && !isProcessing) {
-                recognition.start();
+                try { recognition.start(); } catch(e) {}
             }
         };
 
         try { recognition.start(); } catch(e) {}
     }
 
-    async function processUserSpeech(text) {
-        isProcessing = true;
-        document.getElementById('transcript-preview').innerText = `"${text}"`;
-        document.getElementById('call-status').innerText = "SINA IS THINKING...";
-        
-        // STOP MIC while thinking
-        if (recognition) recognition.stop();
-
-        const response = await getAIResponse(text);
-        speakResponse(response);
-    }
-
-    // --- 2. BRAIN (API) ---
     async function getAIResponse(userText) {
+        document.getElementById('call-status').innerText = "SINA IS THINKING...";
         try {
             const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${voiceApiKey}` 
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${voiceApiKey}` },
                 body: JSON.stringify({ 
                     model: "llama-3.3-70b-versatile",
-                    messages: [
-                        { role: "system", content: "You are SINA. You are on a voice call. Answer naturally in a human way. Avoid all symbols like * or #. Use long, descriptive sentences." },
-                        { role: "user", content: userText }
-                    ],
-                    temperature: 0.7,
-                    max_tokens: 800 
+                    messages: [{ role: "system", content: "You are SINA. A real-time AI. Speak in full, natural sentences. No symbols." }, { role: "user", content: userText }],
+                    temperature: 0.7, max_tokens: 800 
                 })
             });
             const data = await res.json();
             return data.choices[0].message.content;
-        } catch (error) { return "I'm sorry, I lost my connection for a moment."; }
+        } catch (error) { return "Connection flickering."; }
     }
 
-    // --- 3. MOUTH (SYNTHESIS) ---
     function speakResponse(text) {
         if (!isCalling) return;
         
-        // Clean text for the voice engine
-        const cleanText = text.replace(/[*#_]/g, ''); 
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-        
-        // Voice Settings
+        const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
         const voices = synth.getVoices();
         utterance.voice = voices.find(v => v.name.includes('Google US English')) || voices[0];
-        utterance.rate = 0.95; // Slightly slower is more stable
-        utterance.pitch = 1.0;
+        utterance.rate = 0.9; 
+
+        // --- THE FIX: HEARTBEAT FOR ALL DEVICES ---
+        const keepAlive = setInterval(() => {
+            if (!synth.speaking) {
+                clearInterval(keepAlive);
+            } else {
+                // This "resumes" the engine every 5 seconds to prevent timeout
+                synth.pause();
+                synth.resume();
+            }
+        }, 5000);
 
         utterance.onstart = () => {
             isProcessing = false;
@@ -903,23 +881,13 @@ function triggerWifiProtocol() {
         };
 
         utterance.onend = () => {
-            // ONLY start listening again once she is 100% DONE speaking
+            clearInterval(keepAlive);
             if (isCalling) {
-                setTimeout(() => {
-                    startListening();
-                }, 500);
+                setTimeout(startListening, 400);
             }
         };
 
-        // Fix for long sentences cutting off: keep the synthesis "alive"
-        // Chrome bug workaround
         synth.speak(utterance);
-        
-        // This heart-beat keeps the voice from timing out on long sentences
-        let r = setInterval(() => {
-            if (!synth.speaking) clearInterval(r);
-            else synth.resume();
-        }, 10000);
     }
 
     function endVoiceCall() {
