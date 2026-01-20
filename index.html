@@ -865,22 +865,38 @@ function triggerWifiProtocol() {
         console.error("Speech recognition could not start:", e);
     }
 }
-    async function getAIResponse(userText) {
-        document.getElementById('call-status').innerText = "SINA IS THINKING...";
-        try {
-            const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${voiceApiKey}` },
-                body: JSON.stringify({ 
-                    model: "llama-3.3-70b-versatile",
-                    messages: [{ role: "system", content: "You are SINA. A real-time AI. Speak in full, natural sentences. No symbols." }, { role: "user", content: userText }],
-                    temperature: 0.7, max_tokens: 800 
-                })
-            });
-            const data = await res.json();
-            return data.choices[0].message.content;
-        } catch (error) { return "Connection flickering."; }
+   async function getAIResponse(userText) {
+    document.getElementById('call-status').innerText = "SINA ANALYZING...";
+    try {
+        const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${voiceApiKey}` 
+            },
+            body: JSON.stringify({ 
+                // We use the 8b model here for instant speed
+                model: "llama-3.1-8b-instant", 
+                messages: [
+                    { 
+                        role: "system", 
+                        content: "You are SINA. Response must be extremely fast and natural. No markdown, no symbols. Keep it under 3 sentences unless asked for detail." 
+                    }, 
+                    { role: "user", content: userText }
+                ],
+                temperature: 0.6, 
+                max_tokens: 400, // Shorter tokens = faster generation
+                top_p: 1,
+                stream: false // Streaming is complex for voice, so we keep this false for stability
+            })
+        });
+        const data = await res.json();
+        return data.choices[0].message.content;
+    } catch (error) { 
+        console.error("Speed Error:", error);
+        return "Connection lag detected."; 
     }
+}
 
 function speakResponse(text) {
     if (!isCalling) return;
