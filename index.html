@@ -197,23 +197,21 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
 #vault-items::before {
     content: "S";
     position: fixed;
-    top: 50%;
-    left: 50%;
+    top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 40vw; /* Giant "S" sign */
+    font-size: 45vw;
     font-weight: 900;
-    color: rgba(57, 255, 20, 0.03); /* Subtle neon green tint */
-    font-family: 'Inter', sans-serif;
+    /* This gradient creates the shiny metallic "Target" */
+    background: linear-gradient(135deg, rgba(57,255,20,0.01) 0%, rgba(255,255,255,0.2) 50%, rgba(57,255,20,0.01) 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
     pointer-events: none;
-    z-index: -1;
-    text-shadow: 0 0 40px var(--accent-glow);
-    animation: beacon-pulse 4s ease-in-out infinite;
+    z-index: 1;
+    animation: metallic-shine 6s linear infinite;
 }
 
-@keyframes beacon-pulse {
-    0%, 100% { color: rgba(57, 255, 20, 0.02); filter: blur(5px); }
-    50% { color: rgba(57, 255, 20, 0.06); filter: blur(2px); }
-}
+@keyframes metallic-shine { to { background-position: 200% center; } }
 		
     </style>
 </head>
@@ -688,31 +686,38 @@ function toggleVault() {
     const mainApp = document.getElementById('app-content');
     const container = document.getElementById('vault-items');
     
+    // If we are opening the Vault
     if (archivePage.style.display === 'none' || archivePage.style.display === '') {
         mainApp.style.display = 'none';
         archivePage.style.display = 'flex';
         
-        // 1. ACTIVATE PASSIVE RECEIVING (The "S" sign listener)
+        // 1. BROADCAST & LISTEN (Zero-Click Protocol)
+        // This makes the device visible to any Sender's camera
         if (typeof startPassiveReceivingMode === "function") {
             startPassiveReceivingMode();
         }
 
         const data = getVaultData();
         
-        // 2. CLEAR AND REBUILD
+        // 2. CLEAR CONTAINER
+        // Ensures the "Empty" message doesn't get stuck behind new files
         container.innerHTML = ""; 
         
         if (data.length === 0) {
-            container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; margin-top: 100px;">Neural Archive is empty. Upload files via terminal.</p>';
+            container.innerHTML = `
+                <div style="grid-column: 1/-1; text-align: center; margin-top: 100px; z-index: 2;">
+                    <p style="color: var(--text-muted); font-family: 'JetBrains Mono'; font-size: 0.9rem;">NEURAL ARCHIVE EMPTY</p>
+                    <p style="color: #333; font-size: 0.7rem;">UPLOAD VIA TERMINAL OR WAIT FOR INCOMING BEAM</p>
+                </div>`;
             return;
         }
 
+        // 3. GENERATE FILE CARDS
         data.forEach((item) => {
             const isFile = typeof item.content === 'object' && item.content.is_file;
             const displayName = isFile ? item.content.name : "Text Record";
             const displayBody = isFile ? `TYPE: ${item.content.type}` : item.content;
 
-            // 3. ADD SHINY CARDS WITH DOUBLE-CLICK BEAM TRIGGER
             container.innerHTML += `
                 <div ondblclick='initiateVisualBeam(${JSON.stringify(item.content)})' 
                      style="background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(57, 255, 20, 0.1); padding: 20px; border-radius: 16px; cursor: pointer; transition: 0.3s; position: relative; z-index: 10;"
@@ -721,7 +726,7 @@ function toggleVault() {
                 >
                     <div style="color: var(--neon-green); font-family: 'JetBrains Mono'; font-size: 0.6rem; margin-bottom: 15px; display: flex; justify-content: space-between;">
                         <span>${item.timestamp}</span>
-                        <span style="opacity: 0.5;">DBL-CLICK TO BEAM</span>
+                        <span style="opacity: 0.5; letter-spacing: 1px;">DBL-CLICK TO BEAM</span>
                     </div>
                     <div style="color: white; font-weight: bold; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayName}</div>
                     <div style="color: var(--text-muted); font-size: 0.75rem; margin-bottom: 20px;">
@@ -737,10 +742,16 @@ function toggleVault() {
             `;
         });
     } else {
+        // 4. CLOSING THE VAULT
         archivePage.style.display = 'none';
         mainApp.style.display = 'flex';
-        // 4. STOP LISTENING WHEN CLOSED
-        if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
+        
+        // STOP BROADCASTING & LISTENING
+        // Removes the "Active Beacon" so this device is no longer targeted
+        localStorage.removeItem('active_beacon'); 
+        if (window.receiveCheckInterval) {
+            clearInterval(window.receiveCheckInterval);
+        }
     }
 }
 
@@ -903,37 +914,48 @@ function triggerWifiProtocol() {
 
 	// --- SENDER: Double Click Logic ---
 async function initiateVisualBeam(fileContent) {
-    // 1. Create the UI if it doesn't exist
-    if(!document.getElementById('visual-bridge')) {
-        createBridgeUI();
-    }
+    if(!document.getElementById('visual-bridge')) createBridgeUI();
     
     document.getElementById('vault-modal').style.display = 'none';
-    document.getElementById('visual-bridge').style.display = 'flex';
+    const bridge = document.getElementById('visual-bridge');
+    bridge.style.display = 'flex';
+    const status = document.getElementById('bridge-status');
     
     try {
-        // GitHub Pages requires HTTPS for this to work!
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment" } 
-        });
-        const video = document.getElementById('bridge-video');
-        video.srcObject = stream;
-        video.play();
-        
-        // Target simulation
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        document.getElementById('bridge-video').srcObject = stream;
+        document.getElementById('bridge-video').play();
+
+        status.innerText = "SENSING NEURAL FREQUENCIES...";
+
+        // AUTOMATIC DETECTION: No prompts
         setTimeout(() => {
-            const targetID = prompt("VISUAL LOCK CONFIRMED. Enter Target Neural ID:");
-            if(targetID) {
+            const targetID = localStorage.getItem('active_beacon');
+            
+            if (targetID) {
+                status.innerText = `LOCK ACQUIRED: ${targetID.toUpperCase()}`;
+                status.style.color = "white";
+
+                // BEAMING DATA
                 localStorage.setItem('neural_handshake', JSON.stringify({
-                    target: targetID.toLowerCase(),
+                    target: targetID,
                     file: fileContent
                 }));
-                alert("FILE BEAMED SUCCESSFULLY.");
+
+                // Success Animation
+                setTimeout(() => {
+                    status.innerText = "BEAM COMPLETE";
+                    setTimeout(() => closeBridge(), 1000);
+                }, 1000);
+            } else {
+                status.innerText = "NO TARGET DETECTED. ALIGN SCREENS.";
+                status.style.color = "red";
+                setTimeout(() => closeBridge(), 2000);
             }
-            closeBridge();
-        }, 3000);
+        }, 2000); // 2 seconds to "find" the target
+
     } catch (err) {
-        alert("Camera Access Denied: " + err.message);
+        alert("Camera Error: " + err.message);
         closeBridge();
     }
 }
@@ -959,6 +981,32 @@ function createBridgeUI() {
         </div>
     `;
     document.body.appendChild(bridgeDiv);
+}
+
+
+
+	function startPassiveReceivingMode() {
+    const currentUser = localStorage.getItem('sina_session');
+    if (!currentUser) return;
+
+    // 1. ANNOUNCE: Tell the network "I am currently looking at my Vault"
+    localStorage.setItem('active_beacon', currentUser);
+
+    // 2. LISTEN: Check for incoming files
+    if (window.receiveCheckInterval) clearInterval(window.receiveCheckInterval);
+    window.receiveCheckInterval = setInterval(() => {
+        const handshake = JSON.parse(localStorage.getItem('neural_handshake'));
+        if (handshake && handshake.target === currentUser) {
+            saveToVault(handshake.file);
+            
+            // Visual feedback
+            document.body.style.boxShadow = "inset 0 0 100px var(--neon-green)";
+            setTimeout(() => document.body.style.boxShadow = "none", 1000);
+            
+            localStorage.removeItem('neural_handshake');
+            toggleVault(); toggleVault(); // Refresh UI
+        }
+    }, 1000);
 }
 </script>
 
