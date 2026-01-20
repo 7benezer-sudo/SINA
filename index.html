@@ -780,7 +780,7 @@ function triggerWifiProtocol() {
     let isCalling = false;
     let synth = window.speechSynthesis;
     let isProcessing = false; 
-    let safetyLock = false; // NEW: Prevents SINA from hearing herself
+    let silenceTimeout;
 
     async function toggleCallInterface() {
         const callModal = document.getElementById('call-modal');
@@ -789,36 +789,30 @@ function triggerWifiProtocol() {
         try {
             synth.cancel(); 
             isCalling = true;
-            safetyLock = false;
             await navigator.mediaDevices.getUserMedia({ audio: true });
             appContent.style.display = 'none';
             callModal.style.display = 'flex';
-            document.getElementById('call-status').innerText = "SYSTEM READY";
-            initiateContinuousSpeech();
+            document.getElementById('call-status').innerText = "CONNECTED";
+            startListening();
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
 
-    function initiateContinuousSpeech() {
-        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRec) return;
-        if (recognition) { try { recognition.stop(); } catch(e) {} }
+    // --- 1. EARS (RECOGNITION) ---
+    function startListening() {
+        if (!isCalling || synth.speaking) return; // Don't listen if SINA is talking
 
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRec();
-        recognition.continuous = true;
-        recognition.interimResults = true; 
+        recognition.continuous = false; // Changed to false for cleaner "turns"
+        recognition.interimResults = true;
         recognition.lang = 'en-US';
 
         recognition.onstart = () => {
-            if (!isProcessing && !safetyLock) {
-                document.getElementById('call-status').innerText = "SINA IS LISTENING...";
-                document.getElementById('call-status').style.color = "var(--neon-green)";
-            }
+            document.getElementById('call-status').innerText = "SINA IS LISTENING...";
+            document.getElementById('call-status').style.color = "var(--neon-green)";
         };
 
-        recognition.onresult = async (event) => {
-            // IF SINA IS TALKING, IGNORE THE MIC COMPLETELY
-            if (safetyLock) return; 
-
+        recognition.onresult = (event) => {
             let interimTranscript = '';
             let finalTranscript = '';
 
@@ -827,37 +821,44 @@ function triggerWifiProtocol() {
                 else interimTranscript += event.results[i][0].transcript;
             }
 
-            // Interrupt logic: Only if you say something while she is NOT in "Safety Lock"
-            if (interimTranscript.trim().length > 0 && synth.speaking && !safetyLock) {
+            // BARGE-IN: If you speak while she is starting, kill it immediately
+            if (interimTranscript.length > 0 && synth.speaking) {
                 synth.cancel();
+                document.getElementById('call-status').innerText = "LISTENING...";
             }
 
             if (interimTranscript) {
-                 document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
+                document.getElementById('transcript-preview').innerText = `"${interimTranscript}..."`;
             }
 
             if (finalTranscript.trim().length > 0) {
-                document.getElementById('transcript-preview').innerText = `"${finalTranscript}"`;
-                document.getElementById('call-status').innerText = "THINKING...";
-                isProcessing = true;
-                
-                // Stop ears while thinking to prevent double-triggering
-                recognition.stop(); 
-                
-                const aiResponse = await getAIResponse(finalTranscript);
-                if (isCalling) speakResponse(aiResponse);
+                processUserSpeech(finalTranscript);
             }
         };
 
         recognition.onend = () => {
-            if (isCalling && !isProcessing && !safetyLock) {
-                setTimeout(() => { try { recognition.start(); } catch(e){} }, 300);
+            // Auto-restart if not speaking and call is active
+            if (isCalling && !synth.speaking && !isProcessing) {
+                recognition.start();
             }
         };
 
         try { recognition.start(); } catch(e) {}
     }
 
+    async function processUserSpeech(text) {
+        isProcessing = true;
+        document.getElementById('transcript-preview').innerText = `"${text}"`;
+        document.getElementById('call-status').innerText = "SINA IS THINKING...";
+        
+        // STOP MIC while thinking
+        if (recognition) recognition.stop();
+
+        const response = await getAIResponse(text);
+        speakResponse(response);
+    }
+
+    // --- 2. BRAIN (API) ---
     async function getAIResponse(userText) {
         try {
             const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
@@ -869,66 +870,67 @@ function triggerWifiProtocol() {
                 body: JSON.stringify({ 
                     model: "llama-3.3-70b-versatile",
                     messages: [
-                        { role: "system", content: "You are SINA. You are on a phone call. Speak naturally and fully. Do not use symbols like * or #. If the user asks a question, give a full, detailed response." },
+                        { role: "system", content: "You are SINA. You are on a voice call. Answer naturally in a human way. Avoid all symbols like * or #. Use long, descriptive sentences." },
                         { role: "user", content: userText }
                     ],
                     temperature: 0.7,
-                    max_tokens: 1000 
+                    max_tokens: 800 
                 })
             });
             const data = await res.json();
             return data.choices[0].message.content;
-        } catch (error) { return "I'm sorry, my neural link is flickering."; }
+        } catch (error) { return "I'm sorry, I lost my connection for a moment."; }
     }
 
+    // --- 3. MOUTH (SYNTHESIS) ---
     function speakResponse(text) {
         if (!isCalling) return;
         
-        // ACTIVATE SAFETY LOCK - Mic input will be ignored now
-        safetyLock = true; 
+        // Clean text for the voice engine
+        const cleanText = text.replace(/[*#_]/g, ''); 
+        const utterance = new SpeechSynthesisUtterance(cleanText);
         
-        const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
+        // Voice Settings
         const voices = synth.getVoices();
         utterance.voice = voices.find(v => v.name.includes('Google US English')) || voices[0];
-        
-        utterance.rate = 1.0; 
+        utterance.rate = 0.95; // Slightly slower is more stable
         utterance.pitch = 1.0;
 
         utterance.onstart = () => {
+            isProcessing = false;
             document.getElementById('call-status').innerText = "SINA SPEAKING...";
             document.getElementById('call-status').style.color = "white";
         };
 
         utterance.onend = () => {
-            // RELEASE SAFETY LOCK - Now she can listen again
-            safetyLock = false; 
-            isProcessing = false;
+            // ONLY start listening again once she is 100% DONE speaking
             if (isCalling) {
-                document.getElementById('call-status').innerText = "SINA IS LISTENING...";
-                document.getElementById('call-status').style.color = "var(--neon-green)";
-                try { recognition.start(); } catch(e) {}
+                setTimeout(() => {
+                    startListening();
+                }, 500);
             }
         };
 
-        utterance.onerror = () => {
-            safetyLock = false;
-            isProcessing = false;
-        };
-        
+        // Fix for long sentences cutting off: keep the synthesis "alive"
+        // Chrome bug workaround
         synth.speak(utterance);
+        
+        // This heart-beat keeps the voice from timing out on long sentences
+        let r = setInterval(() => {
+            if (!synth.speaking) clearInterval(r);
+            else synth.resume();
+        }, 10000);
     }
 
     function endVoiceCall() {
         isCalling = false;
-        safetyLock = false;
         isProcessing = false;
-        if (recognition) { recognition.onend = null; recognition.abort(); }
+        if (recognition) { recognition.abort(); }
         synth.cancel(); 
         document.getElementById('call-modal').style.display = 'none';
         document.getElementById('app-content').style.display = 'flex';
     }
 </script>
-
 
 
 
