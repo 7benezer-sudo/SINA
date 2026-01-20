@@ -8,6 +8,7 @@
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
 		 
 :root {
@@ -303,18 +304,38 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
         </div>
     </header>
 
-    <div style="flex: 1; padding: 40px 10%; background: #000000;">
-        <div style="max-width: 600px; margin: 0 auto; background: #0a0a0a; border: 1px solid var(--border-subtle); border-radius: 24px; padding: 40px; box-shadow: 0 0 50px rgba(57, 255, 20, 0.05);">
-            <h3 style="color: var(--neon-green); font-family: 'JetBrains Mono'; margin-top: 0;">EMERGENCY WIFI PROTOCOL</h3>
-            <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.6;">
-                Use this protocol only in dead-zones. This will attempt to bridge surrounding Wi-Fi signals into a single high-bandwidth stream.
-            </p>
+    <div style="flex: 1; padding: 40px 10%; background: #000000; overflow-y: auto;">
+        <div style="max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px;">
             
-            <div id="wifi-status" style="margin: 25px 0; padding: 15px; background: #000; border-radius: 12px; border: 1px dashed #333; font-family: 'JetBrains Mono'; font-size: 0.75rem; color: #555;">
-                STATUS: OFFLINE
+            <div style="background: #0a0a0a; border: 1px solid var(--border-subtle); border-radius: 24px; padding: 40px; box-shadow: 0 0 50px rgba(57, 255, 20, 0.05);">
+                <h3 style="color: var(--neon-green); font-family: 'JetBrains Mono'; margin-top: 0; font-size: 0.9rem; letter-spacing: 1px;">EMERGENCY WIFI PROTOCOL</h3>
+                <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.6;">
+                    Use this protocol only in dead-zones. This will attempt to bridge surrounding Wi-Fi signals into a single high-bandwidth stream.
+                </p>
+                
+                <div id="wifi-status" style="margin: 25px 0; padding: 15px; background: #000; border-radius: 12px; border: 1px dashed #333; font-family: 'JetBrains Mono'; font-size: 0.75rem; color: #555;">
+                    STATUS: OFFLINE
+                </div>
+
+                <button class="auth-btn" onclick="executeWifiUplink()">INITIATE UPLINK</button>
             </div>
 
-            <button class="auth-btn" onclick="executeWifiUplink()">INITIATE UPLINK</button>
+            <div style="background: #0a0a0a; border: 1px solid var(--border-subtle); border-radius: 24px; padding: 40px; box-shadow: 0 0 50px rgba(255, 255, 255, 0.02);">
+                <h3 style="color: #ffffff; font-family: 'JetBrains Mono'; margin-top: 0; font-size: 0.9rem; letter-spacing: 1px;">NEURAL BROADCAST</h3>
+                <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.6;">
+                    Generate a high-frequency QR code to bridge this terminal session with another hardware node.
+                </p>
+                
+                <button class="auth-btn" style="margin-top: 10px; background: #ffffff; color: #000; display: flex; align-items: center; justify-content: center; gap: 12px;" onclick="openSharePage()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                        <polyline points="16 6 12 2 8 6"></polyline>
+                        <line x1="12" y1="2" x2="12" y2="15"></line>
+                    </svg>
+                    SHARE TERMINAL
+                </button>
+            </div>
+
         </div>
     </div>
 </div>
@@ -1083,7 +1104,33 @@ function sinaSingSong() {
 </script>
 
 
+<script>
+	function openSharePage() {
+    // Hide settings, show share modal
+    document.getElementById('settings-modal').style.display = 'none';
+    const shareModal = document.getElementById('share-modal');
+    shareModal.style.display = 'flex';
 
+    // Clear previous QR code if it exists
+    const qrContainer = document.getElementById("qrcode");
+    qrContainer.innerHTML = "";
+
+    // Generate new QR code for the current URL
+    new QRCode(qrContainer, {
+        text: window.location.href,
+        width: 200,
+        height: 200,
+        colorDark : "#000000",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+    });
+}
+
+function closeSharePage() {
+    document.getElementById('share-modal').style.display = 'none';
+    document.getElementById('settings-modal').style.display = 'flex';
+}
+</script>
 
 
 
