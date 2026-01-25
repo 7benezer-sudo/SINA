@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SINA ULTRA</title>
+    <title>Sina AI</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
@@ -409,6 +409,16 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
         <button class="auth-btn" style="width: auto; padding: 10px 25px;" onclick="openEnvPage()">CHANGE</button>
     </div>
 </div>
+			  <div style="background: #0a0a0a; border: 1px solid var(--border-subtle); border-radius: 24px; padding: 40px; box-shadow: 0 0 50px rgba(57, 255, 20, 0.05);">
+    <h3 style="color: var(--neon-green); font-family: 'JetBrains Mono'; margin-top: 0; font-size: 0.9rem; letter-spacing: 1px;">OMEGA CLASSROOM PROTOCOL</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem;">Initiate a high-bandwidth neural learning session.</p>
+    
+    <div style="display: flex; gap: 15px;">
+        <button class="auth-btn" style="flex: 1;" onclick="initiateOmegaRole('teacher')">TEACHER</button>
+        <button class="auth-btn" style="flex: 1; background: #fff; color: #000;" onclick="initiateOmegaRole('student')">STUDENT</button>
+    </div>
+</div>
+			  
 
 
 			  
@@ -438,6 +448,33 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
     </div>
 </div>
 
+	
+<div id="omega-classroom" style="display:none; position:fixed; inset:0; background:#000; z-index:30000; flex-direction:column;">
+    <div id="omega-header" style="padding:15px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center;">
+        <div style="color:var(--neon-green); font-family:'JetBrains Mono';">PROTOCOL: OMEGA_CLASS_v1.0</div>
+        <div id="student-count" style="color:#555;">NODES CONNECTED: 0/100</div>
+        <button onclick="terminateClass()" class="auth-btn" style="width:120px; padding:8px; background:#311; color:#f55; font-size:0.7rem;">TERMINATE</button>
+    </div>
+
+    <div id="video-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; flex:1; padding:20px;">
+        <div style="position:relative; background:#050505; border:1px solid #1a1a1a; border-radius:15px; overflow:hidden;">
+            <video id="teacher-video" autoplay style="width:100%; height:100%; object-fit:cover;"></video>
+            <div style="position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,0.7); padding:5px 10px; border-radius:5px; font-size:10px;">PRIMARY INSTRUCTOR</div>
+        </div>
+
+        <div style="position:relative; background:#050505; border:1px solid #1a1a1a; border-radius:15px; overflow:hidden;">
+            <video id="local-video" autoplay muted style="width:100%; height:100%; object-fit:cover;"></video>
+            <div style="position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,0.7); padding:5px 10px; border-radius:5px; font-size:10px;">LOCAL NEURAL NODE</div>
+            
+            <button id="raise-hand-btn" onclick="requestToSpeak()" style="position:absolute; top:10px; right:10px; background:none; border:none; cursor:pointer; display:none;">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="var(--neon-green)"><path d="M12 2C10.9 2 10 2.9 10 4V12.17L8.83 11C7.66 9.83 5.77 9.83 4.6 11L4 11.6L9.4 17C10.12 17.72 11.1 18.12 12.12 18.12H17C18.1 18.12 19 17.22 19 16.12V8C19 6.9 18.1 6 17 6H16V4C16 2.9 15.1 2 14 2H12Z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="teacher-notifications" style="position:fixed; bottom:30px; left:50%; transform:translateX(-50%); display:flex; gap:10px;">
+        </div>
+</div>
 
 	
 <script>
@@ -1791,6 +1828,200 @@ function toggleVault() {
 
 
 </script>
+
+
+<script>
+/* =========================================
+   SINA "OMEGA NEURAL CLASSROOM" SYSTEM
+   High-Capacity P2P Online Learning
+   ========================================= */
+
+let omegaPeer;
+let localStream;
+let activeRoomCode;
+let connections = []; // List of student data connections for the teacher
+let studentCalls = []; // List of active media calls
+
+// 1. INITIALIZE OMEGA PROTOCOL
+async function initiateOmegaRole(role) {
+    try {
+        // Request Camera and Mic
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        
+        // UI Transition
+        document.getElementById('local-video').srcObject = localStream;
+        document.getElementById('omega-classroom').style.display = 'flex';
+        document.getElementById('settings-modal').style.display = 'none';
+
+        if (role === 'teacher') {
+            // Teacher generates AI code using your existing Groq logic
+            activeRoomCode = await generateSecureCode("OMEGA-HUB"); 
+            alert("OMEGA HUB ONLINE. Share this Neural Key: " + activeRoomCode);
+            setupTeacherLogic(activeRoomCode);
+        } else {
+            const code = prompt("INPUT NEURAL KEY:").trim().toUpperCase();
+            if (!code) return terminateClass();
+            activeRoomCode = code;
+            document.getElementById('raise-hand-btn').style.display = 'block';
+            setupStudentLogic(code);
+        }
+    } catch (err) {
+        alert("CRITICAL: Media access denied. Classroom protocol aborted.");
+        console.error(err);
+    }
+}
+
+// 2. TEACHER LOGIC (Hub Node)
+function setupTeacherLogic(code) {
+    // We use a fixed ID for the teacher so students can find them
+    omegaPeer = new Peer('omega-host-' + code);
+    document.getElementById('teacher-video').srcObject = localStream;
+    document.getElementById('omega-status').innerText = "HUB ACTIVE // BROADCASTING";
+
+    omegaPeer.on('connection', (conn) => {
+        // Enforce 100 student limit
+        if (connections.length >= 100) {
+            conn.send({ type: 'ERROR', message: 'HUB_FULL' });
+            conn.close();
+            return;
+        }
+
+        connections.push(conn);
+        document.getElementById('student-count').innerText = `NODES CONNECTED: ${connections.length}/100`;
+
+        // Handle incoming "Hand Raise" requests
+        conn.on('data', (data) => {
+            if (data.type === 'REQUEST_SPEECH') {
+                createQuestionMark(conn.peer, data.studentName);
+            }
+        });
+
+        conn.on('close', () => {
+            connections = connections.filter(c => c.peer !== conn.peer);
+            document.getElementById('student-count').innerText = `NODES CONNECTED: ${connections.length}/100`;
+        });
+    });
+
+    // When a student calls, the teacher answers with their video/audio stream
+    omegaPeer.on('call', (call) => {
+        call.answer(localStream); 
+    });
+}
+
+// 3. STUDENT LOGIC (Neural Node)
+function setupStudentLogic(code) {
+    omegaPeer = new Peer(); // Students get a random ID
+    
+    omegaPeer.on('open', (id) => {
+        // 1. Establish Data Link
+        const conn = omegaPeer.connect('omega-host-' + code);
+        
+        // 2. Establish Video Link (Call the teacher to receive stream)
+        const call = omegaPeer.call('omega-host-' + code, null); 
+        
+        call.on('stream', (teacherStream) => {
+            document.getElementById('teacher-video').srcObject = teacherStream;
+            document.getElementById('omega-status').innerText = "LINK ESTABLISHED // RECEIVING";
+        });
+
+        conn.on('data', (data) => {
+            if (data.type === 'AUTHORIZE_SPEECH') {
+                alert("THE ORACLE HAS GRANTED YOU SPEECH. Your mic and camera are now live to the class.");
+                // Update the call to include student stream
+                omegaPeer.call('omega-host-' + code, localStream);
+            }
+        });
+    });
+
+    omegaPeer.on('error', (err) => {
+        alert("LINK FAILURE: Hub not found or frequency invalid.");
+        terminateClass();
+    });
+}
+
+// 4. INTERACTION SYSTEM
+function requestToSpeak() {
+    const myId = localStorage.getItem('sina_session') || "Student";
+    // Find the teacher connection
+    const teacherConn = connections.find(c => c.peer === 'omega-host-' + activeRoomCode) || 
+                       omegaPeer.connect('omega-host-' + activeRoomCode);
+    
+    teacherConn.send({ 
+        type: 'REQUEST_SPEECH', 
+        studentName: myId.toUpperCase() 
+    });
+    
+    const btn = document.getElementById('raise-hand-btn');
+    btn.style.opacity = "0.3";
+    btn.disabled = true;
+    alert("HAND RAISE SIGNAL SENT.");
+}
+
+function createQuestionMark(studentPeerId, name) {
+    const container = document.getElementById('teacher-notifications');
+    const qBtn = document.createElement('div');
+    qBtn.innerHTML = `
+        <div title="Authorize ${name}" style="background:var(--neon-green); color:black; width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:1.5rem; cursor:pointer; box-shadow:0 0 20px var(--neon-green); position:relative;">
+            ?
+            <span style="position:absolute; top:-20px; font-size:0.6rem; white-space:nowrap; color:white;">${name}</span>
+        </div>`;
+    
+    qBtn.onclick = () => {
+        // Find the student's data connection and authorize them
+        const studentConn = connections.find(c => c.peer === studentPeerId);
+        if (studentConn) {
+            studentConn.send({ type: 'AUTHORIZE_SPEECH' });
+            
+            // On teacher's side, show the student in the second video box
+            omegaPeer.on('call', (call) => {
+                if (call.peer === studentPeerId) {
+                    call.answer(localStream);
+                    call.on('stream', (studentStream) => {
+                        document.getElementById('remote-video').srcObject = studentStream;
+                    });
+                }
+            });
+        }
+        qBtn.remove();
+    };
+    container.appendChild(qBtn);
+}
+
+function terminateClass() {
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+    }
+    if (omegaPeer) {
+        omegaPeer.destroy();
+    }
+    window.location.reload(); 
+}
+	
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
 	
 </body>
 </html>
