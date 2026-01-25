@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sina AI</title>
+    <title>Sina AI - Premium Terminal</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
@@ -449,33 +449,42 @@ textarea { flex: 1; background: transparent; border: none; color: white; outline
 </div>
 
 	
-<div id="omega-classroom" style="display:none; position:fixed; inset:0; background:#000; z-index:30000; flex-direction:column;">
-    <div id="omega-header" style="padding:15px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center;">
-        <div style="color:var(--neon-green); font-family:'JetBrains Mono';">PROTOCOL: OMEGA_CLASS_v1.0</div>
-        <div id="student-count" style="color:#555;">NODES CONNECTED: 0/100</div>
-        <button onclick="terminateClass()" class="auth-btn" style="width:120px; padding:8px; background:#311; color:#f55; font-size:0.7rem;">TERMINATE</button>
-    </div>
-
-    <div id="video-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; flex:1; padding:20px;">
-        <div style="position:relative; background:#050505; border:1px solid #1a1a1a; border-radius:15px; overflow:hidden;">
-            <video id="teacher-video" autoplay style="width:100%; height:100%; object-fit:cover;"></video>
-            <div style="position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,0.7); padding:5px 10px; border-radius:5px; font-size:10px;">PRIMARY INSTRUCTOR</div>
+<div id="omega-classroom" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:20000; flex-direction:column;">
+    
+    <div style="padding:15px 30px; background:#0a0a0a; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; height:60px;">
+        <div style="display:flex; gap:15px; align-items:center;">
+            <div style="font-weight:900; color:white; letter-spacing:2px;">OMEGA <span style="color:var(--neon-green)">CLASSROOM</span></div>
+            <div id="class-code-display" style="background:#222; padding:5px 15px; border-radius:6px; font-family:'JetBrains Mono'; color:var(--neon-green); border:1px dashed #555;">waiting...</div>
         </div>
-
-        <div style="position:relative; background:#050505; border:1px solid #1a1a1a; border-radius:15px; overflow:hidden;">
-            <video id="local-video" autoplay muted style="width:100%; height:100%; object-fit:cover;"></video>
-            <div style="position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,0.7); padding:5px 10px; border-radius:5px; font-size:10px;">LOCAL NEURAL NODE</div>
-            
-            <button id="raise-hand-btn" onclick="requestToSpeak()" style="position:absolute; top:10px; right:10px; background:none; border:none; cursor:pointer; display:none;">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="var(--neon-green)"><path d="M12 2C10.9 2 10 2.9 10 4V12.17L8.83 11C7.66 9.83 5.77 9.83 4.6 11L4 11.6L9.4 17C10.12 17.72 11.1 18.12 12.12 18.12H17C18.1 18.12 19 17.22 19 16.12V8C19 6.9 18.1 6 17 6H16V4C16 2.9 15.1 2 14 2H12Z"/></svg>
-            </button>
+        <div style="display:flex; gap:20px; align-items:center;">
+            <div id="student-counter" style="color:#888; font-family:'JetBrains Mono'; font-size:0.8rem;">ONLINE: 0 / 100</div>
+            <button onclick="exitOmega()" style="background:#311; color:#ff5555; border:1px solid #522; padding:8px 20px; border-radius:6px; cursor:pointer;">EXIT</button>
         </div>
     </div>
 
-    <div id="teacher-notifications" style="position:fixed; bottom:30px; left:50%; transform:translateX(-50%); display:flex; gap:10px;">
+    <div style="flex:1; display:flex; overflow:hidden; position:relative;">
+        
+        <div style="flex:1; background:#000; display:flex; justify-content:center; align-items:center;">
+            <video id="omega-broadcast-view" autoplay playsinline style="width:100%; max-height:100%; object-fit:contain; box-shadow:0 0 50px rgba(57, 255, 20, 0.1);"></video>
         </div>
+
+        <div style="position:absolute; opacity:0; pointer-events:none; width:1px; height:1px; overflow:hidden;">
+            <video id="hidden-teacher-cam" autoplay playsinline muted></video>
+            <video id="hidden-student-cam" autoplay playsinline></video>
+            <canvas id="omega-mixer-canvas" width="1280" height="720"></canvas>
+        </div>
+
+        <div id="omega-sidebar" style="width:280px; background:#080808; border-left:1px solid #222; display:none; flex-direction:column;">
+            <div style="padding:15px; border-bottom:1px solid #222; color:#666; font-size:0.75rem; font-weight:bold;">CLASS ROSTER</div>
+            <div id="omega-roster" style="flex:1; overflow-y:auto; padding:10px;"></div>
+        </div>
+        
+        <button id="btn-raise-hand" onclick="toggleHandRaise()" style="display:none; position:absolute; bottom:30px; right:30px; width:70px; height:70px; border-radius:50%; border:none; background:#222; color:white; font-size:2rem; cursor:pointer; box-shadow:0 0 20px rgba(0,0,0,0.8); z-index:100; transition:all 0.3s ease;">
+            ✋
+        </button>
+    </div>
 </div>
-
+	
 	
 <script>
 // 1. Function to show/hide the settings page
@@ -1832,169 +1841,247 @@ function toggleVault() {
 
 <script>
 /* =========================================
-   SINA "OMEGA NEURAL CLASSROOM" SYSTEM
-   High-Capacity P2P Online Learning
+   OMEGA CLASSROOM: SPLIT-SCREEN ENGINE
    ========================================= */
 
-let omegaPeer;
-let localStream;
-let activeRoomCode;
-let connections = []; // List of student data connections for the teacher
-let studentCalls = []; // List of active media calls
+let omegaPeer = null;
+let omegaConnections = {}; // Map of all student connections
+let activeSpeakerId = null; 
+let mixerInterval = null;
+let broadcastStream = null;
 
-// 1. INITIALIZE OMEGA PROTOCOL
+// --- 1. INITIALIZATION ---
 async function initiateOmegaRole(role) {
-    try {
-        // Request Camera and Mic
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        
-        // UI Transition
-        document.getElementById('local-video').srcObject = localStream;
-        document.getElementById('omega-classroom').style.display = 'flex';
-        document.getElementById('settings-modal').style.display = 'none';
-
-        if (role === 'teacher') {
-            // Teacher generates AI code using your existing Groq logic
-            activeRoomCode = await generateSecureCode("OMEGA-HUB"); 
-            alert("OMEGA HUB ONLINE. Share this Neural Key: " + activeRoomCode);
-            setupTeacherLogic(activeRoomCode);
-        } else {
-            const code = prompt("INPUT NEURAL KEY:").trim().toUpperCase();
-            if (!code) return terminateClass();
-            activeRoomCode = code;
-            document.getElementById('raise-hand-btn').style.display = 'block';
-            setupStudentLogic(code);
-        }
-    } catch (err) {
-        alert("CRITICAL: Media access denied. Classroom protocol aborted.");
-        console.error(err);
+    document.getElementById('settings-modal').style.display = 'none';
+    document.getElementById('omega-classroom').style.display = 'flex';
+    
+    if (role === 'teacher') {
+        setupTeacher();
+    } else {
+        setupStudent();
     }
 }
 
-// 2. TEACHER LOGIC (Hub Node)
-function setupTeacherLogic(code) {
-    // We use a fixed ID for the teacher so students can find them
-    omegaPeer = new Peer('omega-host-' + code);
-    document.getElementById('teacher-video').srcObject = localStream;
-    document.getElementById('omega-status').innerText = "HUB ACTIVE // BROADCASTING";
+// --- 2. TEACHER LOGIC (THE MIXER) ---
+async function setupTeacher() {
+    const code = "CLASS-" + Math.floor(Math.random() * 9000 + 1000);
+    document.getElementById('class-code-display').innerText = code;
+    document.getElementById('omega-sidebar').style.display = 'flex';
 
+    // A. Start Local Camera (Hidden)
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    document.getElementById('hidden-teacher-cam').srcObject = localStream;
+
+    // B. Start The Mixing Engine (Canvas)
+    startVideoMixer();
+
+    // C. Initialize P2P Network
+    omegaPeer = new Peer(code);
+    
     omegaPeer.on('connection', (conn) => {
-        // Enforce 100 student limit
-        if (connections.length >= 100) {
-            conn.send({ type: 'ERROR', message: 'HUB_FULL' });
-            conn.close();
-            return;
+        // 1. Connection Limits
+        if (Object.keys(omegaConnections).length >= 100) {
+            conn.send({ type: 'REJECT' }); setTimeout(() => conn.close(), 500); return;
         }
 
-        connections.push(conn);
-        document.getElementById('student-count').innerText = `NODES CONNECTED: ${connections.length}/100`;
+        // 2. Add to Roster
+        const studentId = conn.peer;
+        omegaConnections[studentId] = { conn: conn, handRaised: false, call: null };
+        updateRosterUI();
 
-        // Handle incoming "Hand Raise" requests
+        // 3. Send the BROADCAST (The Mixed Canvas)
+        const call = omegaPeer.call(studentId, broadcastStream);
+        omegaConnections[studentId].call = call;
+
+        // 4. Listen for Hand Raises
         conn.on('data', (data) => {
-            if (data.type === 'REQUEST_SPEECH') {
-                createQuestionMark(conn.peer, data.studentName);
+            if (data.type === 'HAND_TOGGLE') {
+                omegaConnections[studentId].handRaised = data.value;
+                updateRosterUI();
             }
         });
 
-        conn.on('close', () => {
-            connections = connections.filter(c => c.peer !== conn.peer);
-            document.getElementById('student-count').innerText = `NODES CONNECTED: ${connections.length}/100`;
-        });
+        conn.on('close', () => { delete omegaConnections[studentId]; updateRosterUI(); });
     });
 
-    // When a student calls, the teacher answers with their video/audio stream
+    // D. Receive Active Student Video
     omegaPeer.on('call', (call) => {
-        call.answer(localStream); 
+        call.answer();
+        call.on('stream', (remoteStream) => {
+            // Feed this into the Mixer's "Right Side"
+            document.getElementById('hidden-student-cam').srcObject = remoteStream;
+            // Unmute the student so the teacher can hear them
+            document.getElementById('hidden-student-cam').muted = false;
+        });
     });
 }
 
-// 3. STUDENT LOGIC (Neural Node)
-function setupStudentLogic(code) {
-    omegaPeer = new Peer(); // Students get a random ID
+function startVideoMixer() {
+    const canvas = document.getElementById('omega-mixer-canvas');
+    const ctx = canvas.getContext('2d');
+    const teacherVid = document.getElementById('hidden-teacher-cam');
+    const studentVid = document.getElementById('hidden-student-cam');
     
-    omegaPeer.on('open', (id) => {
-        // 1. Establish Data Link
-        const conn = omegaPeer.connect('omega-host-' + code);
-        
-        // 2. Establish Video Link (Call the teacher to receive stream)
-        const call = omegaPeer.call('omega-host-' + code, null); 
-        
-        call.on('stream', (teacherStream) => {
-            document.getElementById('teacher-video').srcObject = teacherStream;
-            document.getElementById('omega-status').innerText = "LINK ESTABLISHED // RECEIVING";
-        });
+    // Create the stream from the canvas (30 FPS)
+    broadcastStream = canvas.captureStream(30);
+    
+    // Add the Teacher's Audio Track to the broadcast
+    const audioTrack = teacherVid.srcObject.getAudioTracks()[0];
+    if(audioTrack) broadcastStream.addTrack(audioTrack);
 
-        conn.on('data', (data) => {
-            if (data.type === 'AUTHORIZE_SPEECH') {
-                alert("THE ORACLE HAS GRANTED YOU SPEECH. Your mic and camera are now live to the class.");
-                // Update the call to include student stream
-                omegaPeer.call('omega-host-' + code, localStream);
+    // Also show this mixer to the teacher themselves
+    document.getElementById('omega-broadcast-view').srcObject = broadcastStream;
+    document.getElementById('omega-broadcast-view').muted = true; // No echo for teacher
+
+    // THE RENDER LOOP
+    mixerInterval = setInterval(() => {
+        // 1. Clear Screen
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (activeSpeakerId) {
+            // === SPLIT SCREEN MODE ===
+            
+            // Draw Teacher (Left Half)
+            // (source, sx, sy, sw, sh, dx, dy, dw, dh)
+            drawVideoCover(ctx, teacherVid, 0, 0, canvas.width / 2, canvas.height);
+            
+            // Draw Student (Right Half)
+            drawVideoCover(ctx, studentVid, canvas.width / 2, 0, canvas.width / 2, canvas.height);
+            
+            // Draw Divider Line
+            ctx.fillStyle = "#39ff14";
+            ctx.fillRect((canvas.width / 2) - 2, 0, 4, canvas.height);
+
+        } else {
+            // === SOLO TEACHER MODE ===
+            drawVideoCover(ctx, teacherVid, 0, 0, canvas.width, canvas.height);
+        }
+    }, 33); // ~30 FPS
+}
+
+// Helper to scale video "object-fit: cover" style onto canvas
+function drawVideoCover(ctx, vid, x, y, w, h) {
+    if (vid.paused || vid.ended) return;
+    // Simple stretch for performance (Or add complex aspect ratio logic here)
+    ctx.drawImage(vid, x, y, w, h);
+}
+
+
+// --- 3. STUDENT LOGIC ---
+function setupStudent() {
+    const code = prompt("ENTER CLASS CODE:");
+    if(!code) return;
+    
+    document.getElementById('class-code-display').innerText = "CONNECTED";
+    document.getElementById('btn-raise-hand').style.display = 'block';
+
+    omegaPeer = new Peer();
+    
+    omegaPeer.on('open', () => {
+        const conn = omegaPeer.connect(code);
+        window.currentTeacherConn = conn;
+
+        // A. Handle Teacher Commands
+        conn.on('data', async (data) => {
+            if (data.type === 'GO_LIVE') {
+                // You are chosen! Send camera to teacher.
+                const myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                omegaPeer.call(code, myStream);
+                
+                const btn = document.getElementById('btn-raise-hand');
+                btn.innerText = "🎤";
+                btn.style.background = "#ff4444";
+                btn.style.boxShadow = "0 0 50px red";
+            }
+            else if (data.type === 'END_LIVE') {
+                // Muted
+                const btn = document.getElementById('btn-raise-hand');
+                btn.innerText = "✋";
+                btn.style.background = "#222";
+                btn.style.boxShadow = "none";
+                alert("Microphone closed by instructor.");
+                location.reload(); // Reset streams
             }
         });
-    });
 
-    omegaPeer.on('error', (err) => {
-        alert("LINK FAILURE: Hub not found or frequency invalid.");
-        terminateClass();
-    });
-}
-
-// 4. INTERACTION SYSTEM
-function requestToSpeak() {
-    const myId = localStorage.getItem('sina_session') || "Student";
-    // Find the teacher connection
-    const teacherConn = connections.find(c => c.peer === 'omega-host-' + activeRoomCode) || 
-                       omegaPeer.connect('omega-host-' + activeRoomCode);
-    
-    teacherConn.send({ 
-        type: 'REQUEST_SPEECH', 
-        studentName: myId.toUpperCase() 
-    });
-    
-    const btn = document.getElementById('raise-hand-btn');
-    btn.style.opacity = "0.3";
-    btn.disabled = true;
-    alert("HAND RAISE SIGNAL SENT.");
-}
-
-function createQuestionMark(studentPeerId, name) {
-    const container = document.getElementById('teacher-notifications');
-    const qBtn = document.createElement('div');
-    qBtn.innerHTML = `
-        <div title="Authorize ${name}" style="background:var(--neon-green); color:black; width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:1.5rem; cursor:pointer; box-shadow:0 0 20px var(--neon-green); position:relative;">
-            ?
-            <span style="position:absolute; top:-20px; font-size:0.6rem; white-space:nowrap; color:white;">${name}</span>
-        </div>`;
-    
-    qBtn.onclick = () => {
-        // Find the student's data connection and authorize them
-        const studentConn = connections.find(c => c.peer === studentPeerId);
-        if (studentConn) {
-            studentConn.send({ type: 'AUTHORIZE_SPEECH' });
-            
-            // On teacher's side, show the student in the second video box
-            omegaPeer.on('call', (call) => {
-                if (call.peer === studentPeerId) {
-                    call.answer(localStream);
-                    call.on('stream', (studentStream) => {
-                        document.getElementById('remote-video').srcObject = studentStream;
-                    });
-                }
+        // B. Receive The Broadcast (The Mixed Canvas)
+        omegaPeer.on('call', (call) => {
+            call.answer();
+            call.on('stream', (mixedStream) => {
+                document.getElementById('omega-broadcast-view').srcObject = mixedStream;
             });
-        }
-        qBtn.remove();
-    };
-    container.appendChild(qBtn);
+        });
+    });
 }
 
-function terminateClass() {
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+
+// --- 4. SHARED UI ACTIONS ---
+
+function updateRosterUI() {
+    const roster = document.getElementById('omega-roster');
+    const count = Object.keys(omegaConnections).length;
+    document.getElementById('student-counter').innerText = `ONLINE: ${count} / 100`;
+    roster.innerHTML = '';
+
+    Object.keys(omegaConnections).forEach(id => {
+        const data = omegaConnections[id];
+        const isLive = (activeSpeakerId === id);
+        
+        // Dynamic Icon Logic
+        let iconHtml;
+        if (isLive) iconHtml = `<div onclick="muteStudent('${id}')" style="cursor:pointer; width:30px; height:30px; background:red; color:white; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; box-shadow:0 0 10px red;">✕</div>`;
+        else if (data.handRaised) iconHtml = `<div onclick="goLive('${id}')" style="cursor:pointer; width:30px; height:30px; background:var(--neon-green); color:black; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; animation:pulse 1s infinite;">?</div>`;
+        else iconHtml = `<div style="width:30px; height:30px; background:#222; color:#555; border-radius:50%; display:flex; align-items:center; justify-content:center;">●</div>`;
+
+        const div = document.createElement('div');
+        div.style = "padding:12px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center;";
+        div.innerHTML = `<span style="color:#ccc; font-family:'JetBrains Mono'; font-size:0.8rem;">ID: ${id.substring(0,5)}..</span> ${iconHtml}`;
+        roster.appendChild(div);
+    });
+}
+
+function toggleHandRaise() {
+    if (!window.currentTeacherConn) return;
+    const btn = document.getElementById('btn-raise-hand');
+    const isRaised = btn.style.color === "var(--neon-green)"; // simple check
+
+    if (!isRaised) {
+        btn.style.color = "var(--neon-green)";
+        btn.style.border = "2px solid var(--neon-green)";
+        window.currentTeacherConn.send({ type: 'HAND_TOGGLE', value: true });
+    } else {
+        btn.style.color = "white";
+        btn.style.border = "none";
+        window.currentTeacherConn.send({ type: 'HAND_TOGGLE', value: false });
     }
-    if (omegaPeer) {
-        omegaPeer.destroy();
+}
+
+function goLive(studentId) {
+    if (activeSpeakerId) muteStudent(activeSpeakerId); // Only 1 at a time
+    activeSpeakerId = studentId;
+    
+    // Tell student to start transmitting
+    omegaConnections[studentId].conn.send({ type: 'GO_LIVE' });
+    updateRosterUI();
+}
+
+function muteStudent(studentId) {
+    activeSpeakerId = null;
+    
+    // Tell student to stop
+    if(omegaConnections[studentId]) {
+        omegaConnections[studentId].conn.send({ type: 'END_LIVE' });
     }
-    window.location.reload(); 
+    
+    // Clear the mixer input
+    document.getElementById('hidden-student-cam').srcObject = null;
+    updateRosterUI();
+}
+
+function exitOmega() {
+    if(mixerInterval) clearInterval(mixerInterval);
+    location.reload();
 }
 	
 </script>
