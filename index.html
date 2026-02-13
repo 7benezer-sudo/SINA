@@ -2417,97 +2417,121 @@ async function setupTeacher() {
     document.getElementById('class-code-display').innerText = code;
     document.getElementById('omega-sidebar').style.display = 'flex';
 
-    // A. Start Local Camera (Hidden)
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    document.getElementById('hidden-teacher-cam').srcObject = localStream;
+    // 1. FORCE HD QUALITY (720p) - Critical for clear text/faces
+    const constraints = {
+        video: { width: 1280, height: 720, frameRate: 30 },
+        audio: { echoCancellation: true, noiseSuppression: true }
+    };
 
-    // B. Start The Mixing Engine (Canvas)
-    startVideoMixer();
+    try {
+        const localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Save globally so we can access tracks later
+        window.localTeacherStream = localStream; 
+        document.getElementById('hidden-teacher-cam').srcObject = localStream;
+        
+        // Initialize the mixer but don't use it yet
+        startVideoMixer();
 
-    // C. Initialize P2P Network
-    omegaPeer = new Peer(code);
-    
-    omegaPeer.on('connection', (conn) => {
-        // 1. Connection Limits
-        if (Object.keys(omegaConnections).length >= 100) {
-            conn.send({ type: 'REJECT' }); setTimeout(() => conn.close(), 500); return;
-        }
-
-        // 2. Add to Roster
-        const studentId = conn.peer;
-        omegaConnections[studentId] = { conn: conn, handRaised: false, call: null };
-        updateRosterUI();
-
-        // 3. Send the BROADCAST (The Mixed Canvas)
-        const call = omegaPeer.call(studentId, broadcastStream);
-        omegaConnections[studentId].call = call;
-
-        // 4. Listen for Hand Raises
-        conn.on('data', (data) => {
-            if (data.type === 'HAND_TOGGLE') {
-                omegaConnections[studentId].handRaised = data.value;
-                updateRosterUI();
+        // 2. Initialize PeerJS with high-speed config
+        omegaPeer = new Peer(code, {
+            debug: 1,
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
+                ]
             }
         });
+        
+        omegaPeer.on('connection', (conn) => {
+            // Connection Limits
+            if (Object.keys(omegaConnections).length >= 50) {
+                conn.send({ type: 'REJECT' }); setTimeout(() => conn.close(), 500); return;
+            }
 
-        conn.on('close', () => { delete omegaConnections[studentId]; updateRosterUI(); });
-    });
+            const studentId = conn.peer;
+            omegaConnections[studentId] = { conn: conn, handRaised: false, call: null };
+            updateRosterUI();
 
-    // D. Receive Active Student Video
-    omegaPeer.on('call', (call) => {
-        call.answer();
-        call.on('stream', (remoteStream) => {
-            // Feed this into the Mixer's "Right Side"
-            document.getElementById('hidden-student-cam').srcObject = remoteStream;
-            // Unmute the student so the teacher can hear them
-            document.getElementById('hidden-student-cam').muted = false;
+            // 3. CRITICAL: SEND THE DIRECT STREAM BY DEFAULT (Clearer, Faster)
+            // We only switch to the "Mixer" (Canvas) if split-screen is needed.
+            const streamToSend = activeSpeakerId ? window.canvasStream : window.localTeacherStream;
+            
+            const call = omegaPeer.call(studentId, streamToSend);
+            omegaConnections[studentId].call = call;
+
+            conn.on('data', (data) => {
+                if (data.type === 'HAND_TOGGLE') {
+                    omegaConnections[studentId].handRaised = data.value;
+                    updateRosterUI();
+                }
+            });
+
+            conn.on('close', () => { delete omegaConnections[studentId]; updateRosterUI(); });
         });
-    });
+
+        omegaPeer.on('call', (call) => {
+            call.answer();
+            call.on('stream', (remoteStream) => {
+                document.getElementById('hidden-student-cam').srcObject = remoteStream;
+                // Unmute so teacher hears the student
+                document.getElementById('hidden-student-cam').muted = false; 
+            });
+        });
+
+    } catch(err) {
+        alert("Camera Access Denied or Not Found: " + err);
+    }
 }
+
+	
 
 function startVideoMixer() {
     const canvas = document.getElementById('omega-mixer-canvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for no transparency
     const teacherVid = document.getElementById('hidden-teacher-cam');
     const studentVid = document.getElementById('hidden-student-cam');
     
-    // Create the stream from the canvas (30 FPS)
-    broadcastStream = canvas.captureStream(30);
+    // Set Canvas to HD resolution to match camera
+    canvas.width = 1280;
+    canvas.height = 720;
+
+    // Create the stream from canvas (30 FPS)
+    // We store this globally so we can switch to it later
+    window.canvasStream = canvas.captureStream(30);
     
-    // Add the Teacher's Audio Track to the broadcast
-    const audioTrack = teacherVid.srcObject.getAudioTracks()[0];
-    if(audioTrack) broadcastStream.addTrack(audioTrack);
+    // Add audio from teacher to the canvas stream
+    if(window.localTeacherStream.getAudioTracks().length > 0) {
+        window.canvasStream.addTrack(window.localTeacherStream.getAudioTracks()[0]);
+    }
 
-    // Also show this mixer to the teacher themselves
-    document.getElementById('omega-broadcast-view').srcObject = broadcastStream;
-    document.getElementById('omega-broadcast-view').muted = true; // No echo for teacher
+    // Teacher sees their own mix
+    document.getElementById('omega-broadcast-view').srcObject = window.canvasStream;
+    document.getElementById('omega-broadcast-view').muted = true; 
 
-    // THE RENDER LOOP
-    mixerInterval = setInterval(() => {
-        // 1. Clear Screen
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        if (activeSpeakerId) {
-            // === SPLIT SCREEN MODE ===
-            
-            // Draw Teacher (Left Half)
-            // (source, sx, sy, sw, sh, dx, dy, dw, dh)
+    // EFFICIENT RENDER LOOP
+    function renderLoop() {
+        if (!activeSpeakerId) {
+            // SOLO MODE: Just draw teacher (Low CPU impact)
+            // Actually, in solo mode, we send the direct stream, but we keep this running
+            // for the local preview.
+            ctx.drawImage(teacherVid, 0, 0, canvas.width, canvas.height);
+        } else {
+            // SPLIT MODE: Draw both
+            // Draw Teacher (Left)
             drawVideoCover(ctx, teacherVid, 0, 0, canvas.width / 2, canvas.height);
-            
-            // Draw Student (Right Half)
+            // Draw Student (Right)
             drawVideoCover(ctx, studentVid, canvas.width / 2, 0, canvas.width / 2, canvas.height);
             
-            // Draw Divider Line
+            // Neon Divider
             ctx.fillStyle = "#39ff14";
             ctx.fillRect((canvas.width / 2) - 2, 0, 4, canvas.height);
-
-        } else {
-            // === SOLO TEACHER MODE ===
-            drawVideoCover(ctx, teacherVid, 0, 0, canvas.width, canvas.height);
         }
-    }, 33); // ~30 FPS
+        requestAnimationFrame(renderLoop);
+    }
+    requestAnimationFrame(renderLoop);
 }
+	
 
 // Helper to scale video "object-fit: cover" style onto canvas
 function drawVideoCover(ctx, vid, x, y, w, h) {
@@ -2525,7 +2549,15 @@ function setupStudent() {
     document.getElementById('class-code-display').innerText = "CONNECTED";
     document.getElementById('btn-raise-hand').style.display = 'block';
 
-    omegaPeer = new Peer();
+    // 1. Initialize Peer with better STUN servers for faster connection
+    omegaPeer = new Peer({
+        config: {
+            'iceServers': [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+        }
+    });
     
     omegaPeer.on('open', () => {
         const conn = omegaPeer.connect(code);
@@ -2534,33 +2566,72 @@ function setupStudent() {
         // A. Handle Teacher Commands
         conn.on('data', async (data) => {
             if (data.type === 'GO_LIVE') {
-                // You are chosen! Send camera to teacher.
-                const myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                omegaPeer.call(code, myStream);
-                
-                const btn = document.getElementById('btn-raise-hand');
-                btn.innerText = "🎤";
-                btn.style.background = "#ff4444";
-                btn.style.boxShadow = "0 0 50px red";
+                // 2. FORCE HD QUALITY (1280x720)
+                // This ensures the student looks sharp on the teacher's split screen
+                try {
+                    const myStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            width: { ideal: 1280 }, 
+                            height: { ideal: 720 },
+                            frameRate: { ideal: 30 }
+                        }, 
+                        audio: { 
+                            echoCancellation: true, 
+                            noiseSuppression: true 
+                        } 
+                    });
+                    
+                    // Save stream globally so we can stop it later
+                    window.localStudentStream = myStream;
+
+                    // Send this HD stream to the teacher
+                    omegaPeer.call(code, myStream);
+                    
+                    // UI Feedback (Red Mic)
+                    const btn = document.getElementById('btn-raise-hand');
+                    btn.innerText = "🎤";
+                    btn.style.background = "#ff4444";
+                    btn.style.boxShadow = "0 0 50px red";
+                    btn.style.border = "none";
+                    btn.style.color = "white";
+
+                } catch (err) {
+                    alert("HD Camera Access Failed: " + err.message);
+                }
             }
             else if (data.type === 'END_LIVE') {
-                // Muted
+                // 3. CLEAN UP STREAMS PROPERLY
+                // Stop the camera light immediately
+                if (window.localStudentStream) {
+                    window.localStudentStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Reset UI Button
                 const btn = document.getElementById('btn-raise-hand');
                 btn.innerText = "✋";
                 btn.style.background = "#222";
                 btn.style.boxShadow = "none";
+                btn.style.color = "white";
+                
                 alert("Microphone closed by instructor.");
-                location.reload(); // Reset streams
             }
         });
 
-        // B. Receive The Broadcast (The Mixed Canvas)
+        // B. Receive The Broadcast (Teacher's Stream)
         omegaPeer.on('call', (call) => {
+            // Answer efficiently (don't send video back here, only receive)
             call.answer();
-            call.on('stream', (mixedStream) => {
-                document.getElementById('omega-broadcast-view').srcObject = mixedStream;
+            
+            call.on('stream', (remoteStream) => {
+                const videoElement = document.getElementById('omega-broadcast-view');
+                videoElement.srcObject = remoteStream;
+                videoElement.play().catch(e => console.error("Autoplay prevented:", e));
             });
         });
+    });
+
+    omegaPeer.on('error', (err) => {
+        alert("Connection Error: " + err.type);
     });
 }
 
@@ -2607,24 +2678,51 @@ function toggleHandRaise() {
 }
 
 function goLive(studentId) {
-    if (activeSpeakerId) muteStudent(activeSpeakerId); // Only 1 at a time
+    if (activeSpeakerId) muteStudent(activeSpeakerId); 
     activeSpeakerId = studentId;
     
-    // Tell student to start transmitting
-    omegaConnections[studentId].conn.send({ type: 'GO_LIVE' });
+    // 1. Tell the student to start sending their video
+    if(omegaConnections[studentId]) {
+        omegaConnections[studentId].conn.send({ type: 'GO_LIVE' });
+    }
+
+    // 2. SWITCH EVERYONE TO CANVAS MIXER MODE
+    // We replace the "Direct Camera" track with the "Canvas" track
+    const canvasVideoTrack = window.canvasStream.getVideoTracks()[0];
+    
+    Object.values(omegaConnections).forEach(peerObj => {
+        if (peerObj.call) {
+            const sender = peerObj.call.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            if (sender) {
+                sender.replaceTrack(canvasVideoTrack);
+            }
+        }
+    });
+
     updateRosterUI();
 }
 
 function muteStudent(studentId) {
     activeSpeakerId = null;
     
-    // Tell student to stop
     if(omegaConnections[studentId]) {
         omegaConnections[studentId].conn.send({ type: 'END_LIVE' });
     }
     
-    // Clear the mixer input
     document.getElementById('hidden-student-cam').srcObject = null;
+
+    // 3. SWITCH EVERYONE BACK TO DIRECT CAMERA (High Quality)
+    const directVideoTrack = window.localTeacherStream.getVideoTracks()[0];
+
+    Object.values(omegaConnections).forEach(peerObj => {
+        if (peerObj.call) {
+            const sender = peerObj.call.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            if (sender) {
+                sender.replaceTrack(directVideoTrack);
+            }
+        }
+    });
+
     updateRosterUI();
 }
 
