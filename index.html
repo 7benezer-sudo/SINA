@@ -3122,6 +3122,216 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+
+
+
+
+
+
+	<script>
+/* =========================================
+   SINA VAULT UI LOGIC (MISSING PART)
+   ========================================= */
+
+function toggleVault() {
+    const modal = document.getElementById('vault-modal');
+    const app = document.getElementById('app-content');
+    
+    // Check if currently hidden
+    if (modal.style.display === 'none' || modal.style.display === '') {
+        // OPEN VAULT
+        modal.style.display = 'flex';
+        app.style.display = 'none';
+        renderVaultItems(); // This loads the files from memory
+    } else {
+        // CLOSE VAULT
+        modal.style.display = 'none';
+        app.style.display = 'flex';
+    }
+}
+
+function renderVaultItems() {
+    const list = document.getElementById('vault-items');
+    const data = getVaultData(); // Uses your existing getVaultData function
+    
+    list.innerHTML = ""; // Clear current list
+
+    if (!data || data.length === 0) {
+        list.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; color: #444; margin-top: 50px; font-family: 'JetBrains Mono';">
+                // ARCHIVE EMPTY_
+            </div>`;
+        return;
+    }
+
+    // Loop through data in reverse (newest first)
+    data.slice().reverse().forEach((item, index) => {
+        // Create the card for each file
+        const card = document.createElement('div');
+        card.style = "background: #0a0a0a; border: 1px solid #222; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 15px; transition: transform 0.2s;";
+        
+        // Icon based on type
+        let icon = "📄";
+        if (item.type && item.type.includes("image")) icon = "🖼️";
+        if (item.type && item.type.includes("audio")) icon = "🎵";
+        
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="font-size: 2rem;">${icon}</div>
+                <div style="font-family: 'JetBrains Mono'; font-size: 0.7rem; color: #555;">${item.timestamp || 'UNKNOWN'}</div>
+            </div>
+            
+            <div style="overflow: hidden;">
+                <div style="font-weight: bold; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${item.name}
+                </div>
+                <div style="font-size: 0.75rem; color: #888; margin-top: 4px;">
+                    ${item.type || 'Unknown Data'}
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: auto;">
+                <button onclick="downloadFromVault('${index}')" style="flex: 1; background: var(--neon-green); border: none; padding: 8px; border-radius: 8px; font-weight: bold; cursor: pointer;">
+                    OPEN
+                </button>
+                <button onclick="deleteFromVault('${index}')" style="background: #220000; border: 1px solid #400; color: #f55; padding: 8px 12px; border-radius: 8px; cursor: pointer;">
+                    ✕
+                </button>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+// Helper to handle the "OPEN" button inside the vault
+function downloadFromVault(reversedIndex) {
+    const data = getVaultData().slice().reverse(); // We reversed display, so reverse data to match
+    const file = data[reversedIndex];
+    if(file) {
+        // Reuse your existing download function
+        downloadFile(file.data, file.name, file.type);
+    }
+}
+
+// Helper to delete items
+function deleteFromVault(reversedIndex) {
+    if(!confirm("Permanently delete this neural fragment?")) return;
+    
+    let userDB = JSON.parse(localStorage.getItem('sina_user_db'));
+    const currentUser = localStorage.getItem('sina_session');
+    
+    // We have to calculate the REAL index because we displayed them reversed
+    const realIndex = userDB[currentUser].vault.length - 1 - reversedIndex;
+    
+    userDB[currentUser].vault.splice(realIndex, 1);
+    localStorage.setItem('sina_user_db', JSON.stringify(userDB));
+    
+    renderVaultItems(); // Refresh the screen
+}
+</script>
+
+
+	<script>
+/* =========================================
+   SINA VAULT UI LOGIC (MISSING PART)
+   ========================================= */
+
+function toggleVault() {
+    const modal = document.getElementById('vault-modal');
+    const app = document.getElementById('app-content');
+    
+    // Check if currently hidden
+    if (modal.style.display === 'none' || modal.style.display === '') {
+        // OPEN VAULT
+        modal.style.display = 'flex';
+        app.style.display = 'none';
+        renderVaultItems(); // This loads the files from memory
+    } else {
+        // CLOSE VAULT
+        modal.style.display = 'none';
+        app.style.display = 'flex';
+    }
+}
+
+function renderVaultItems() {
+    const list = document.getElementById('vault-items');
+    const data = getVaultData(); // Uses your existing getVaultData function
+    
+    list.innerHTML = ""; // Clear current list
+
+    if (!data || data.length === 0) {
+        list.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; color: #444; margin-top: 50px; font-family: 'JetBrains Mono';">
+                // ARCHIVE EMPTY_
+            </div>`;
+        return;
+    }
+
+    // Loop through data in reverse (newest first)
+    data.slice().reverse().forEach((item, index) => {
+        // Create the card for each file
+        const card = document.createElement('div');
+        card.style = "background: #0a0a0a; border: 1px solid #222; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 15px; transition: transform 0.2s;";
+        
+        // Icon based on type
+        let icon = "📄";
+        if (item.type && item.type.includes("image")) icon = "🖼️";
+        if (item.type && item.type.includes("audio")) icon = "🎵";
+        
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="font-size: 2rem;">${icon}</div>
+                <div style="font-family: 'JetBrains Mono'; font-size: 0.7rem; color: #555;">${item.timestamp || 'UNKNOWN'}</div>
+            </div>
+            
+            <div style="overflow: hidden;">
+                <div style="font-weight: bold; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${item.name}
+                </div>
+                <div style="font-size: 0.75rem; color: #888; margin-top: 4px;">
+                    ${item.type || 'Unknown Data'}
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: auto;">
+                <button onclick="downloadFromVault('${index}')" style="flex: 1; background: var(--neon-green); border: none; padding: 8px; border-radius: 8px; font-weight: bold; cursor: pointer;">
+                    OPEN
+                </button>
+                <button onclick="deleteFromVault('${index}')" style="background: #220000; border: 1px solid #400; color: #f55; padding: 8px 12px; border-radius: 8px; cursor: pointer;">
+                    ✕
+                </button>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+// Helper to handle the "OPEN" button inside the vault
+function downloadFromVault(reversedIndex) {
+    const data = getVaultData().slice().reverse(); // We reversed display, so reverse data to match
+    const file = data[reversedIndex];
+    if(file) {
+        // Reuse your existing download function
+        downloadFile(file.data, file.name, file.type);
+    }
+}
+
+// Helper to delete items
+function deleteFromVault(reversedIndex) {
+    if(!confirm("Permanently delete this neural fragment?")) return;
+    
+    let userDB = JSON.parse(localStorage.getItem('sina_user_db'));
+    const currentUser = localStorage.getItem('sina_session');
+    
+    // We have to calculate the REAL index because we displayed them reversed
+    const realIndex = userDB[currentUser].vault.length - 1 - reversedIndex;
+    
+    userDB[currentUser].vault.splice(realIndex, 1);
+    localStorage.setItem('sina_user_db', JSON.stringify(userDB));
+    
+    renderVaultItems(); // Refresh the screen
+}
+</script>
 	
 	
 </body>
