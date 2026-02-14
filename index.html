@@ -2076,15 +2076,27 @@ animate();
 
 	<script>
 /* =========================================
-   SINA "GHOST FREQUENCY" SYSTEM
-   AI-Driven Peer-to-Peer File Transfer
+   SINA "GHOST FREQUENCY" SYSTEM (FIXED)
+   Cross-Device P2P File Transfer Engine
    ========================================= */
 
 // 1. CONFIGURATION
-const groqApiKey = "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"; // Updated Key
-const appPrefix = "sina-freq-"; // Ensures our PeerJS IDs don't clash with others
+const groqApiKey = "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"; 
+const appPrefix = "sina-freq-"; 
 
-// 2. DEPENDENCY INJECTION (Loads PeerJS automatically if missing)
+// 2. NETWORK CONFIGURATION (CRITICAL FOR CROSS-DEVICE)
+// This tells the devices how to find each other over the internet
+const peerConfig = {
+    debug: 2, // Prints errors to console
+    config: {
+        'iceServers': [
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+    }
+};
+
+// 3. DEPENDENCY INJECTION
 (function loadP2PCore() {
     if (!window.Peer) {
         const script = document.createElement('script');
@@ -2095,7 +2107,6 @@ const appPrefix = "sina-freq-"; // Ensures our PeerJS IDs don't clash with other
 })();
 
 /* --- VAULT (LOCAL STORAGE) LOGIC --- */
-
 function saveToVault(content) {
     const currentUser = localStorage.getItem('sina_session');
     let userDB = JSON.parse(localStorage.getItem('sina_user_db')) || {};
@@ -2121,84 +2132,103 @@ function getVaultData() {
     return userDB[currentUser]?.vault || [];
 }
 
-/* --- THE "GHOST FREQUENCY" AI SHARING --- */
+/* --- THE "GHOST FREQUENCY" ENGINE --- */
 
-// A. SENDER SIDE: Start the Frequency
+// A. SENDER SIDE (Host)
 async function initiateGhostShare(name, base64, type) {
-    // 1. UI Feedback
     const btn = event.target;
     const originalText = btn.innerHTML;
     btn.innerHTML = "CALIBRATING...";
     
     try {
-        // 2. Ask AI for a cool unique code based on the filename
-        const code = await generateSecureCode(name);
+        // 1. Generate unique code
+        const rawCode = await generateSecureCode(name);
+        const cleanCode = rawCode.toUpperCase().trim(); // Enforce uppercase
         
-        // 3. Open the "Bridge" UI
-        showBridgeUI(code, "broadcasting");
+        // 2. Show UI
+        showBridgeUI(cleanCode, "broadcasting");
 
-        // 4. Start PeerJS Host
-        const peer = new Peer(appPrefix + code);
+        // 3. Start Peer with STUN Config
+        const peer = new Peer(appPrefix + cleanCode, peerConfig);
 
         peer.on('open', (id) => {
-            console.log("FREQUENCY OPEN:", id);
+            console.log("FREQUENCY ACTIVE:", id);
+            document.getElementById('bridge-status').innerText = "FREQUENCY STABLE. WAITING FOR PEER...";
         });
 
         peer.on('connection', (conn) => {
-            // When someone connects...
-            document.getElementById('bridge-status').innerHTML = 
-                "<span style='color:var(--neon-green)'>NEURAL HANDSHAKE DETECTED. TRANSMITTING...</span>";
+            console.log("PEER CONNECTED:", conn.peer);
             
-            // Wait 1s for stability, then send
-            setTimeout(() => {
-                conn.send({
-                    file: { name, data: base64, type }
-                });
-                
-                // Success Message
-                document.getElementById('bridge-status').innerHTML = 
-                    "<span style='color:white'>PACKET DELIVERED. CLOSING LINK.</span>";
-                
-                // Cleanup after 3 seconds
+            document.getElementById('bridge-status').innerHTML = 
+                "<span style='color:var(--neon-green)'>DEVICE LINKED. TRANSMITTING...</span>";
+            
+            // Wait for connection to be fully open before sending
+            conn.on('open', () => {
                 setTimeout(() => {
-                    closeBridge();
-                    peer.destroy();
-                }, 3000);
-            }, 1000);
+                    conn.send({
+                        file: { name, data: base64, type }
+                    });
+                    
+                    document.getElementById('bridge-status').innerHTML = 
+                        "<span style='color:white'>PACKET DELIVERED. CLOSING LINK.</span>";
+                    
+                    setTimeout(() => {
+                        closeBridge();
+                        peer.destroy();
+                        btn.innerHTML = originalText;
+                    }, 3000);
+                }, 500);
+            });
         });
 
         peer.on('error', (err) => {
-            alert("Frequency Jammed: " + err.type);
-            btn.innerHTML = originalText;
+            console.error(err);
+            document.getElementById('bridge-status').innerHTML = `<span style='color:red'>ERROR: ${err.type}</span>`;
+            // If ID is taken, try again automatically with a random suffix
+            if(err.type === 'unavailable-id') {
+                 peer.destroy();
+                 alert("Frequency Busy. Please try again.");
+                 closeBridge();
+            }
         });
+
+        // Store peer globally to destroy it if user clicks cancel
+        window.activeGhostPeer = peer;
 
     } catch (e) {
         console.error(e);
-        alert("AI Uplink Failed: " + e.message);
+        alert("System Failure: " + e.message);
         btn.innerHTML = originalText;
     }
 }
 
-// B. RECEIVER SIDE: Connect to Frequency
+// B. RECEIVER SIDE (Client)
 function connectToFrequency() {
-    const codeInput = prompt("ENTER GHOST FREQUENCY CODE (e.g. RED-EAGLE-9):");
+    const codeInput = prompt("ENTER GHOST FREQUENCY CODE (e.g. IRON-WOLF-99):");
     if (!codeInput) return;
 
     const cleanCode = codeInput.trim().toUpperCase();
     showBridgeUI(cleanCode, "receiving");
 
-    const peer = new Peer(); // We don't need a specific ID, just a random one
+    // Start Peer as a "floater" (no specific ID needed for receiver)
+    const peer = new Peer(null, peerConfig);
 
-    peer.on('open', () => {
-        const conn = peer.connect(appPrefix + cleanCode);
+    peer.on('open', (myId) => {
+        console.log("Receiver ID:", myId);
+        const destinationId = appPrefix + cleanCode;
+        
+        console.log("Attempting to connect to:", destinationId);
+        const conn = peer.connect(destinationId, { reliable: true });
 
         conn.on('open', () => {
-            document.getElementById('bridge-status').innerText = "LOCKED ON. DOWNLOADING...";
+            console.log("Connection Established!");
+            document.getElementById('bridge-status').innerHTML = 
+                "<span style='color:var(--neon-green)'>LOCKED ON. DOWNLOADING...</span>";
         });
 
         conn.on('data', (data) => {
+            console.log("Data Received");
             if (data.file) {
-                // Auto-save and Auto-download
                 saveToVault(data.file);
                 downloadFile(data.file.data, data.file.name, data.file.type);
                 
@@ -2208,7 +2238,7 @@ function connectToFrequency() {
                 setTimeout(() => {
                     closeBridge();
                     peer.destroy();
-                    // Refresh UI if needed
+                    // Refresh Vault if open
                     if(document.getElementById('vault-modal').style.display === 'flex') {
                         toggleVault(); toggleVault();
                     }
@@ -2216,21 +2246,27 @@ function connectToFrequency() {
             }
         });
 
-        // If connection fails (wrong code or sender offline)
+        // Handle connection failure
+        peer.on('error', (err) => {
+            console.error(err);
+            document.getElementById('bridge-status').innerHTML = 
+                "<span style='color:red'>SIGNAL LOST. CHECK CODE.</span>";
+        });
+        
+        // Timeout if no connection after 10s
         setTimeout(() => {
             if (!conn.open) {
-                document.getElementById('bridge-status').innerHTML = 
-                    "<span style='color:red'>SIGNAL LOST. FREQUENCY INVALID OR INACTIVE.</span>";
+                document.getElementById('bridge-status').innerText = "SEARCHING..."; 
             }
-        }, 5000);
+        }, 3000);
     });
+
+    window.activeGhostPeer = peer;
 }
 
-// C. AI HELPER: Generates the Code
+// C. AI CODE GENERATOR
 async function generateSecureCode(filename) {
-    // fallback random code in case AI fails
     const randomSuffix = Math.floor(Math.random() * 90 + 10);
-    
     try {
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -2242,65 +2278,58 @@ async function generateSecureCode(filename) {
                 model: "llama-3.3-70b-versatile",
                 messages: [{
                     role: "system",
-                    content: "You are a military encryption AI. Output ONLY a 2-word code + a 2 digit number (e.g. IRON-WOLF-99) based on the user's input. Hyphenated. Uppercase. No extra text."
+                    content: "Output ONLY a 2-word code + 2 digits (e.g. RED-WOLF-99). Uppercase. Hyphenated."
                 }, {
                     role: "user",
-                    content: `Generate code for file: ${filename}`
-                }],
-                temperature: 0.8
+                    content: `Generate code for: ${filename}`
+                }]
             })
         });
-
         const data = await response.json();
         let code = data.choices[0].message.content.trim().replace(/[^a-zA-Z0-9-]/g, '');
-        return code || `GHOST-DATA-${randomSuffix}`;
+        return code || `GHOST-${randomSuffix}`;
     } catch (e) {
-        return `NEURAL-LINK-${randomSuffix}`;
+        return `NEURAL-${randomSuffix}`;
     }
 }
 
-/* --- UI HELPERS --- */
-
+/* --- UI UTILS --- */
 function showBridgeUI(code, mode) {
     let bridge = document.getElementById('visual-bridge');
     if (!bridge) {
-        // Create the UI dynamically if it doesn't exist
         bridge = document.createElement('div');
         bridge.id = 'visual-bridge';
         bridge.style = "display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); backdrop-filter:blur(10px); z-index:20000; flex-direction:column; align-items:center; justify-content:center;";
         document.body.appendChild(bridge);
     }
     
-    // Determine content based on mode
-    const title = mode === "broadcasting" ? "BROADCASTING GHOST FREQUENCY" : "TUNING RECEIVER";
-    const instruction = mode === "broadcasting" ? "Share this code with the recipient:" : "Attempting connection to:";
+    const title = mode === "broadcasting" ? "BROADCASTING FREQUENCY" : "TUNING RECEIVER";
+    const instruction = mode === "broadcasting" ? "Enter this code on the other device:" : "Connecting to:";
     
     bridge.innerHTML = `
         <div style="text-align:center; color:white; font-family:'JetBrains Mono';">
             <h2 style="color:var(--neon-green); letter-spacing:3px;">${title}</h2>
             <p style="margin-top:30px; color:#888;">${instruction}</p>
-            
             <div style="font-size:2.5rem; font-weight:900; margin:20px 0; padding:20px; border:2px dashed var(--neon-green); color:white; text-shadow:0 0 20px var(--neon-green);">
                 ${code}
             </div>
-            
             <p id="bridge-status" style="height:20px; font-size:0.9rem; color:#aaa; margin-top:20px;">
-                ${mode === 'broadcasting' ? 'WAITING FOR PEER...' : 'SEARCHING ETHER...'}
+                INITIALIZING NETWORK...
             </p>
-
             <button onclick="closeBridge()" style="margin-top:50px; background:transparent; border:1px solid #444; color:#666; padding:10px 30px; border-radius:30px; cursor:pointer;">ABORT SIGNAL</button>
         </div>
     `;
-    
     bridge.style.display = 'flex';
 }
 
 function closeBridge() {
     const bridge = document.getElementById('visual-bridge');
     if (bridge) bridge.style.display = 'none';
+    if (window.activeGhostPeer) {
+        window.activeGhostPeer.destroy();
+        window.activeGhostPeer = null;
+    }
 }
-
-/* --- STANDARD UTILS --- */
 
 function downloadFile(base64, name, type) {
     const link = document.createElement('a');
@@ -2310,82 +2339,8 @@ function downloadFile(base64, name, type) {
     link.click();
     document.body.removeChild(link);
 }
-
-function watchFile(base64, type) {
-    const blob = new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type });
-    window.open(URL.createObjectURL(blob), '_blank');
-}
-
-function deleteFile(index) {
-    if(confirm("Purge record?")) {
-        const currentUser = localStorage.getItem('sina_session');
-        let userDB = JSON.parse(localStorage.getItem('sina_user_db'));
-        userDB[currentUser].vault.splice(index, 1);
-        localStorage.setItem('sina_user_db', JSON.stringify(userDB));
-        toggleVault(); toggleVault(); // Refresh
-    }
-}
-
-// MAIN RENDER FUNCTION
-function toggleVault() {
-    const archivePage = document.getElementById('vault-modal');
-    const mainApp = document.getElementById('app-content');
-    const container = document.getElementById('vault-items');
-    
-    if (archivePage.style.display === 'none' || archivePage.style.display === '') {
-        mainApp.style.display = 'none';
-        archivePage.style.display = 'flex';
-        
-        // Add a "Receive" button to the header if it's not there
-        const header = archivePage.querySelector('header > div');
-        if (!document.getElementById('btn-receive-freq')) {
-            const rxBtn = document.createElement('div');
-            rxBtn.id = 'btn-receive-freq';
-            rxBtn.innerHTML = `
-                <button onclick="connectToFrequency()" style="background:#333; color:white; border:1px solid #555; padding:8px 15px; border-radius:8px; font-family:'JetBrains Mono'; cursor:pointer; font-size:0.75rem;">
-                    📡 TUNE FREQUENCY
-                </button>`;
-            header.appendChild(rxBtn);
-        }
-
-        const data = getVaultData();
-        container.innerHTML = '';
-
-        if (data.length === 0) {
-            container.innerHTML = `<div style="text-align:center; padding:50px; color:#444;">NO ARCHIVES FOUND</div>`;
-            return;
-        }
-        
-        data.forEach((file, index) => {
-            const card = document.createElement('div');
-            card.style = `background:rgba(20,20,20,0.8); border:1px solid #333; padding:20px; border-radius:15px; box-shadow:0 10px 30px black;`;
-            
-            card.innerHTML = `
-                <div style="color:var(--neon-green); font-size:0.7rem; margin-bottom:10px;">${file.timestamp}</div>
-                <h3 style="color:white; margin:0 0 20px 0; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${file.name}</h3>
-                
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                    <button onclick="initiateGhostShare('${file.name}', '${file.data}', '${file.type}')" 
-                        style="grid-column:span 2; background:var(--neon-green); color:black; border:none; padding:10px; font-weight:bold; cursor:pointer; border-radius:8px; font-family:'JetBrains Mono';">
-                        GHOST SHARE
-                    </button>
-                    <button onclick="watchFile('${file.data}', '${file.type}')" style="background:#222; color:#ccc; border:1px solid #444; padding:8px; border-radius:8px; cursor:pointer;">VIEW</button>
-                    <button onclick="deleteFile(${index})" style="background:#311; color:#f55; border:1px solid #522; padding:8px; border-radius:8px; cursor:pointer;">DEL</button>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-
-    } else {
-        archivePage.style.display = 'none';
-        mainApp.style.display = 'flex';
-    }
-}
-
-		
-
-
 </script>
+
 
 
 <script>
