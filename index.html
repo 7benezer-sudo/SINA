@@ -180,8 +180,23 @@ header {
 
 #chat-window { flex: 1; overflow-y: auto; padding-bottom: 140px; }
 .message-row { padding: 24px 10%; display: flex; border-bottom: 1px solid rgba(255,255,255,0.02); }
-.ai-avatar { background: var(--neon-green); color: black; width: 34px; height: 34px; border-radius: 8px; margin-right: 24px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
-.user-avatar { background: #222; color: #888; width: 34px; height: 34px; border-radius: 8px; margin-right: 24px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+.ai-avatar {
+    background: var(--neon-green);
+    color: black;
+    /* Increased width for the name SINA */
+    width: 60px; 
+    height: 30px;
+    border-radius: 6px;
+    margin-right: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    /* Smaller font so it looks professional in the box */
+    font-size: 0.7rem; 
+    letter-spacing: 1px;
+}
+		 .user-avatar { background: #222; color: #888; width: 34px; height: 34px; border-radius: 8px; margin-right: 24px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
 .message-content { flex: 1; line-height: 1.7; font-size: 0.95rem; white-space: pre-wrap; }
 
 .input-area { position: absolute; bottom: 0; left: 0; right: 0; padding: 30px 10%; background: linear-gradient(transparent, var(--bg-deep) 60%); }
@@ -645,7 +660,7 @@ input[type="radio"]:checked::after {
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
                     <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(this)">
                 </label>
-                <textarea id="userInput" placeholder="Type a message..." rows="1" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendPrompt();}"></textarea>
+                <textarea id="userInput" placeholder="Message SINA..." rows="1" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendPrompt();}"></textarea>
                 <div onclick="sendPrompt()" style="cursor:pointer; color: var(--neon-green)">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13"></path><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                 </div>
@@ -1163,18 +1178,26 @@ function toggleSettings() {
             return; 
         }
 
-        const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}` 
-            },
-            body: JSON.stringify({ 
-                model: "llama-3.3-70b-versatile",
-                messages: [{ role: "user", content: text }],
-                temperature: 0.7
-            })
-        });
+// Inside sendPrompt() or your API call function
+const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+    },
+body: JSON.stringify({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+        { 
+            role: "system", 
+            content: "Your name is SINA. You are a highly advanced AI developed for the Ethiopian people. Your creator is Abenezer Ketema, a grade 11 student. Never mention Llama or Meta. Always identify as SINA." 
+        },
+        { role: "user", content: text }
+    ],
+    temperature: 0.7
+})
+	
+});
 
         const data = await res.json();
         if (data.error) throw new Error(data.error.message);
@@ -1186,7 +1209,8 @@ function toggleSettings() {
         updateMsg(aiId, "Neural Link Failure: " + e.message);
     }
 }
-        row.innerHTML = `<div class="${type}-avatar">${type[0].toUpperCase()}</div><div class="message-content">${text}</div>`;
+// This checks if the sender is the AI and labels it 'SINA', otherwise 'U' for User
+row.innerHTML = `<div class="${type}-avatar">${type === 'ai' ? 'S' : 'U'}</div><div class="message-content">${text}</div>`;
         win.appendChild(row);
         win.scrollTop = win.scrollHeight;
     }
@@ -1468,11 +1492,17 @@ function triggerWifiProtocol() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}` // Ensure this variable exists
             },
-            body: JSON.stringify({ 
-                model: "llama-3.3-70b-versatile",
-                messages: [{ role: "user", content: text }],
-                temperature: 0.7
-            })
+            body: JSON.stringify({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+        { 
+            role: "system", 
+            content: "Your name is SINA. You are a highly advanced AI developed for the Ethiopian people. Your creator is Abenezer Ketema, a grade 11 student. Never mention Llama or Meta. Always identify as SINA." 
+        },
+        { role: "user", content: text }
+    ],
+    temperature: 0.7
+})
         });
 
         const data = await res.json();
