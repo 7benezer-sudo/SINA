@@ -2477,7 +2477,11 @@ async function setupTeacher() {
             }
 
             const studentId = conn.peer;
-            omegaConnections[studentId] = { conn: conn, handRaised: false, call: null };
+            // Extract the username from metadata, fallback to peer ID if missing
+            const studentName = (conn.metadata && conn.metadata.username) ? conn.metadata.username : studentId.substring(0,5);
+            
+            // Save the username in our connection dictionary
+            omegaConnections[studentId] = { conn: conn, handRaised: false, call: null, username: studentName };
             updateRosterUI();
 
             // 3. CRITICAL: SEND THE DIRECT STREAM BY DEFAULT (Clearer, Faster)
@@ -2587,7 +2591,11 @@ function setupStudent() {
     });
     
     omegaPeer.on('open', () => {
-        const conn = omegaPeer.connect(code);
+        // Grab the logged-in user's ID
+        const sessionUser = localStorage.getItem('sina_session') || "Student";
+        
+        // Pass the username to the teacher using PeerJS metadata
+        const conn = omegaPeer.connect(code, { metadata: { username: sessionUser } });
         window.currentTeacherConn = conn;
 
         // A. Handle Teacher Commands
@@ -2683,7 +2691,8 @@ function updateRosterUI() {
 
         const div = document.createElement('div');
         div.style = "padding:12px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center;";
-        div.innerHTML = `<span style="color:#ccc; font-family:'JetBrains Mono'; font-size:0.8rem;">ID: ${id.substring(0,5)}..</span> ${iconHtml}`;
+        // Display the actual student username instead of the ID
+        div.innerHTML = `<span style="color:#ccc; font-family:'JetBrains Mono'; font-size:0.8rem;">${data.username.toUpperCase()}</span> ${iconHtml}`;
         roster.appendChild(div);
     });
 }
