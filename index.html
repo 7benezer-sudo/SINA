@@ -1453,7 +1453,7 @@ function triggerWifiProtocol() {
     }
 }
 
-	async function sendPrompt() {
+async function sendPrompt() {
     const input = document.getElementById('userInput');
     const text = input.value.trim();
     
@@ -1481,28 +1481,34 @@ function triggerWifiProtocol() {
             
             updateMsg(aiId, `The ${fileName} has been successfully uploaded to your Neural Archive.`);
             clearFile();
+
+            // REFRESH VAULT IF OPEN: This ensures the file appears immediately
+            const archivePage = document.getElementById('vault-modal');
+            if (archivePage.style.display === 'flex') {
+                toggleVault(); // Close
+                toggleVault(); // Re-open to rebuild the list
+            }
             return; 
         }
 
         // --- AI API LOGIC ---
-        // Ensure apiKey is defined at the top of your script!
-        const res = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}` // Ensure this variable exists
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
             },
             body: JSON.stringify({
-    model: "llama-3.3-70b-versatile",
-    messages: [
-        { 
-            role: "system", 
-            content: "Your name is SINA. You are a highly advanced AI developed for the Ethiopian people. Your creator is Abenezer Ketema, a grade 11 student. Never mention Llama or Meta. Always identify as SINA." 
-        },
-        { role: "user", content: text }
-    ],
-    temperature: 0.7
-})
+                model: "openai/gpt-oss-20b", // Updated to a robust standard endpoint
+                messages: [
+                    { 
+                        role: "system", 
+                        content: "Your name is SINA. You are a highly advanced AI developed for the Ethiopian people. Your creator is Abenezer Ketema, a grade 11 student. Never mention Llama or Meta. Always identify as SINA." 
+                    },
+                    { role: "user", content: text }
+                ],
+                temperature: 0.7
+            })
         });
 
         const data = await res.json();
@@ -1633,10 +1639,15 @@ function startPassiveReceivingMode() {
         } catch (err) { alert("Mic required."); endVoiceCall(); }
     }
 
-function startListening() {
+    function startListening() {
     if (!isCalling || synth.speaking) return;
 
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) {
+        alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+        return;
+    }
+
     recognition = new SpeechRec();
     recognition.continuous = false; 
     recognition.interimResults = true;
@@ -1655,14 +1666,11 @@ function startListening() {
             else interim += event.results[i][0].transcript;
         }
 
-        // --- BARGE-IN INTERRUPT ---
-        // If you speak while SINA is talking, she stops immediately
         if (interim.length > 0 && synth.speaking) {
             synth.cancel();
             document.getElementById('call-status').innerText = "LISTENING...";
         }
 
-        // Update the preview text on screen
         if (interim) {
             document.getElementById('transcript-preview').innerText = `"${interim}..."`;
         }
@@ -1670,49 +1678,56 @@ function startListening() {
         if (final.trim().length > 0) {
             document.getElementById('transcript-preview').innerText = `"${final}"`;
             
-            // --- 1. CHECK FOR COMMANDS (Like "Open Google") ---
             const isCommand = handleWebCommands(final);
-            
-            if (isCommand) {
-                // If it was a command, we reset processing and wait for next input
-                isProcessing = false; 
-                // We don't call the AI here because handleWebCommands already did the work
-            } else {
-                // --- 2. REGULAR CHAT LOGIC ---
+            if (!isCommand) {
                 isProcessing = true;
-                recognition.stop(); // Stop ears while SINA thinks
-                getAIResponse(final).then(speakResponse);
+                recognition.stop();
+                getAIResponse(final).then(speakResponse).catch(err => {
+                    console.error("AI Error:", err);
+                    isProcessing = false;
+                    speakResponse("My memory circuit flickered. Could you repeat that?");
+                });
             }
         }
     };
 
-    recognition.onend = () => {
-        // Auto-restart if the call is active and SINA isn't busy
+    // --- AUTO-RECOVERY FIX ---
+    recognition.onerror = (event) => {
+        console.warn("Speech recognition error:", event.error);
         if (isCalling && !synth.speaking && !isProcessing) {
-            try { 
-                recognition.start(); 
-            } catch(e) {
-                console.log("Mic restart prevented: already active.");
-            }
+            setTimeout(() => {
+                try { recognition.start(); } catch(e) {}
+            }, 1000);
+        }
+    };
+
+    recognition.onend = () => {
+        if (isCalling && !synth.speaking && !isProcessing) {
+            setTimeout(() => {
+                try { 
+                    recognition.start(); 
+                } catch(e) {
+                    // Prevent crash if already running
+                }
+            }, 300);
         }
     };
 
     try { 
         recognition.start(); 
     } catch(e) {
-        console.error("Speech recognition could not start:", e);
+        console.error("Could not start recognition:", e);
     }
 }
 	
-   async function getAIResponse(userText) {
+async function getAIResponse(userText) {
     document.getElementById('call-status').innerText = "SINA ANALYZING...";
     
     // 1. Add your new message to her memory
     conversationHistory.push({ role: "user", content: userText });
 
-    // 2. Keep memory from getting too "heavy" (Keep last 10 messages)
+    // 2. Keep memory from getting too "heavy" (Keep last 10 messages + system prompt)
     if (conversationHistory.length > 11) { 
-        // We keep the first message (system prompt) and the last 10
         conversationHistory = [conversationHistory[0], ...conversationHistory.slice(-10)];
     }
 
@@ -1724,14 +1739,20 @@ function startListening() {
                 'Authorization': `Bearer ${voiceApiKey}` 
             },
             body: JSON.stringify({ 
-                model: "llama-3.1-8b-instant", // High speed for real-time feel
-                messages: conversationHistory, // We send the WHOLE memory now
+                model: "llama-3.3-70b-versatile", // Updated to a stable, robust Groq model
+                messages: conversationHistory, 
                 temperature: 0.6, 
                 max_tokens: 400
             })
         });
         
         const data = await res.json();
+        
+        // Handle unexpected API error structures gracefully
+        if (data.error) {
+            throw new Error(data.error.message || "API limit or connection issue.");
+        }
+
         const aiMessage = data.choices[0].message.content;
 
         // 3. Add SINA's response to her memory so she remembers what she said
@@ -1739,10 +1760,10 @@ function startListening() {
 
         return aiMessage;
     } catch (error) { 
+        console.error("AI Response Error:", error);
         return "My memory circuit flickered. Could you repeat that?"; 
     }
 }
-
 function speakResponse(text) {
     if (!isCalling) return;
     
